@@ -740,21 +740,41 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
         const recordId = `${studentId}_${gradeSubject}_${gradeSemester}`;
         const existingRecord = studentGrades.find(r => r.id === recordId) || { id: recordId, studentId, teacherName: currentUser, subject: gradeSubject, className: gradeClass, semester: gradeSemester, academicYear: gradeYear, chapters: { 1: {}, 2: {}, 3: {}, 4: {}, 5: {} } };
         const numVal = parseFloat(value); const newRecord = { ...existingRecord };
+        
         if (chapterIdx) {
-            const chIdx = chapterIdx as 1|2|3|4|5; const ch = { ...newRecord.chapters[chIdx] } || {};
+            const chIdx = chapterIdx as 1|2|3|4|5; 
+            // FIX: Removed "|| {}" because spread syntax creates a new object which is always truthy.
+            const ch = { ...newRecord.chapters[chIdx] };
+            
             // @ts-ignore
             ch[field] = isNaN(numVal) ? undefined : numVal;
-            const validScores = [ch.f1, ch.f2, ch.f3, ch.f4, ch.f5, ch.sum].filter(n => n !== undefined && n !== null && !isNaN(n));
-            const total = validScores.reduce((a, b) => (a as number) + (b as number), 0) as number;
-            ch.avg = validScores.length > 0 ? parseFloat((total / validScores.length).toFixed(2)) : undefined;
+            
+            // Recalculate Average
+            const scoreFields = [ch.f1, ch.f2, ch.f3, ch.f4, ch.f5].filter((n: any) => n !== undefined && n !== null && n !== '' && !isNaN(n));
+            
+            if (scoreFields.length > 0) {
+               const sumScores = scoreFields.reduce((a: number, b: number) => Number(a) + Number(b), 0);
+               ch.avg = parseFloat((sumScores / scoreFields.length).toFixed(2));
+            } else if (ch.sum !== undefined && ch.sum !== null && !isNaN(ch.sum)) {
+               ch.avg = ch.sum;
+            } else {
+               ch.avg = undefined;
+            }
+
             newRecord.chapters[chIdx] = ch;
         } else { 
             // @ts-ignore
             (newRecord as any)[field] = isNaN(numVal) ? undefined : numVal; 
         }
+        
         const chapterAvgs = Object.values(newRecord.chapters).map((c: ChapterGrade) => c.avg).filter(n => n !== undefined && n !== null) as number[];
         const sts = newRecord.sts || 0; const sas = newRecord.sas || 0;
-        if (chapterAvgs.length > 0) { const avgRR = chapterAvgs.reduce((a, b) => a + b, 0) / chapterAvgs.length; newRecord.finalGrade = parseFloat(((avgRR + sts + sas) / 3).toFixed(2)); }
+        
+        if (chapterAvgs.length > 0 || sts > 0 || sas > 0) { 
+            const avgRR = chapterAvgs.length > 0 ? chapterAvgs.reduce((a, b) => a + b, 0) / chapterAvgs.length : 0;
+            newRecord.finalGrade = parseFloat(((avgRR + sts + sas) / 3).toFixed(2)); 
+        }
+        
         onUpdateGrade(newRecord);
     };
     const chapterColors = { 1: 'bg-blue-50', 2: 'bg-green-50', 3: 'bg-yellow-50', 4: 'bg-purple-50', 5: 'bg-pink-50' };
