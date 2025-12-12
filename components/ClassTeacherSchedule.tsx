@@ -376,7 +376,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = (props) => {
                 <tbody className="divide-y divide-gray-200">
                    {classStudents.map((student, idx) => {
                       const recordId = `${student.id}_${gradeSubject}_${gradeSemester}`;
-                      const record = studentGrades.find(r => r.id === recordId) || { chapters: {1:{},2:{},3:{},4:{},5:{}} };
+                      const record = studentGrades.find(r => r.id === recordId) || { chapters: {1:{},2:{},3:{},4:{},5:{}} } as GradeRecord;
                       
                       return (
                          <tr key={student.id} className="hover:bg-gray-50">
