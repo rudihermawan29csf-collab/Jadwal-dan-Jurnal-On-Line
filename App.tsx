@@ -6,8 +6,8 @@ import ClassTeacherSchedule from './components/ClassTeacherSchedule';
 import LoginPage from './components/LoginPage';
 import SettingsPanel from './components/SettingsPanel';
 import { ViewMode, TeacherData, UserRole, AppSettings, AuthSettings, CalendarEvent, TeacherLeave, TeachingMaterial, TeachingJournal, Student, GradeRecord, HomeroomRecord } from './types';
-import { TEACHER_DATA as INITIAL_DATA, INITIAL_STUDENTS } from './constants';
-import { Table as TableIcon, Search, Calendar, Ban, CalendarClock, Settings, Menu, LogOut, ChevronDown } from 'lucide-react';
+import { TEACHER_DATA as INITIAL_DATA, INITIAL_STUDENTS, DEFAULT_SCHEDULE_MAP } from './constants';
+import { Table as TableIcon, Search, Calendar, Ban, CalendarClock, Settings, Menu, LogOut, ChevronDown, BookOpen, Users, GraduationCap, ClipboardList, User } from 'lucide-react';
 
 const App: React.FC = () => {
   // --- AUTH STATE ---
@@ -72,9 +72,9 @@ const App: React.FC = () => {
   const [scheduleMap, setScheduleMap] = useState<Record<string, string>>(() => {
     try {
       const saved = localStorage.getItem('scheduleMap');
-      return saved ? JSON.parse(saved) : {};
+      return saved ? JSON.parse(saved) : DEFAULT_SCHEDULE_MAP;
     } catch {
-      return {};
+      return DEFAULT_SCHEDULE_MAP;
     }
   });
 
@@ -226,8 +226,10 @@ const App: React.FC = () => {
     // Set default view based on role
     if (role === 'ADMIN') {
       setViewMode(ViewMode.TABLE);
+    } else if (role === 'TEACHER') {
+      setViewMode(ViewMode.CLASS_SCHEDULE);
     } else {
-      setViewMode(ViewMode.VIEW_SCHEDULES);
+      setViewMode(ViewMode.CLASS_SCHEDULE);
     }
   };
 
@@ -315,6 +317,10 @@ const App: React.FC = () => {
   const handleAddMaterial = (material: TeachingMaterial) => {
     setTeachingMaterials(prev => [...prev, material]);
   };
+  
+  const handleEditMaterial = (updatedMaterial: TeachingMaterial) => {
+    setTeachingMaterials(prev => prev.map(m => m.id === updatedMaterial.id ? updatedMaterial : m));
+  };
 
   const handleDeleteMaterial = (id: string) => {
     setTeachingMaterials(prev => prev.filter(m => m.id !== id));
@@ -377,13 +383,19 @@ const App: React.FC = () => {
     if (userRole === 'ADMIN') {
       options.push({ mode: ViewMode.TABLE, label: 'Data Tugas Guru', icon: <TableIcon size={18} /> });
       options.push({ mode: ViewMode.SCHEDULE, label: 'Edit Jadwal', icon: <Calendar size={18} /> });
-    }
-
-    // Everyone can view schedules
-    options.push({ mode: ViewMode.VIEW_SCHEDULES, label: 'Lihat Jadwal', icon: <CalendarClock size={18} /> });
-
-    if (userRole === 'ADMIN') {
+      options.push({ mode: ViewMode.CLASS_SCHEDULE, label: 'Lihat Jadwal Kelas', icon: <CalendarClock size={18} /> });
+      options.push({ mode: ViewMode.TEACHER_SCHEDULE, label: 'Lihat Jadwal Guru', icon: <User size={18} /> });
+      options.push({ mode: ViewMode.JOURNAL, label: 'Jurnal Mengajar (Admin)', icon: <BookOpen size={18} /> });
       options.push({ mode: ViewMode.SETTINGS, label: 'Pengaturan', icon: <Settings size={18} /> });
+    } else if (userRole === 'TEACHER') {
+        options.push({ mode: ViewMode.CLASS_SCHEDULE, label: 'Jadwal Kelas', icon: <Calendar size={18} /> });
+        options.push({ mode: ViewMode.TEACHER_SCHEDULE, label: 'Jadwal Guru', icon: <User size={18} /> });
+        options.push({ mode: ViewMode.JOURNAL, label: 'Jurnal Mengajar', icon: <BookOpen size={18} /> });
+        options.push({ mode: ViewMode.MONITORING, label: 'Monitoring Absensi', icon: <Users size={18} /> });
+        options.push({ mode: ViewMode.GRADES, label: 'Nilai Siswa', icon: <GraduationCap size={18} /> });
+        options.push({ mode: ViewMode.HOMEROOM, label: 'Catatan Wali Kelas', icon: <ClipboardList size={18} /> });
+    } else if (userRole === 'STUDENT') {
+        options.push({ mode: ViewMode.CLASS_SCHEDULE, label: 'Lihat Jadwal', icon: <CalendarClock size={18} /> });
     }
 
     return options;
@@ -449,9 +461,9 @@ const App: React.FC = () => {
                     </div>
                     
                     <div className="p-2 space-y-1">
-                       {navOptions.map(opt => (
+                       {navOptions.map((opt, idx) => (
                          <button
-                           key={opt.mode}
+                           key={`${opt.mode}-${idx}`}
                            onClick={() => {
                              setViewMode(opt.mode);
                              setIsMenuOpen(false);
@@ -528,7 +540,14 @@ const App: React.FC = () => {
                onSave={handleSaveSchedule}
              />
           )}
-          {viewMode === ViewMode.VIEW_SCHEDULES && (
+          
+          {(viewMode === ViewMode.VIEW_SCHEDULES || 
+            viewMode === ViewMode.CLASS_SCHEDULE ||
+            viewMode === ViewMode.TEACHER_SCHEDULE ||
+            viewMode === ViewMode.JOURNAL || 
+            viewMode === ViewMode.MONITORING || 
+            viewMode === ViewMode.GRADES || 
+            viewMode === ViewMode.HOMEROOM) && (
              <ClassTeacherSchedule 
                key={`${userRole}-${currentUser}`} // FORCE REMOUNT WHEN USER CHANGES
                teacherData={teachers} 
@@ -542,6 +561,7 @@ const App: React.FC = () => {
                // Journal Props
                teachingMaterials={teachingMaterials}
                onAddMaterial={handleAddMaterial}
+               onEditMaterial={handleEditMaterial}
                onDeleteMaterial={handleDeleteMaterial}
                teachingJournals={teachingJournals}
                onAddJournal={handleAddJournal}
@@ -555,8 +575,18 @@ const App: React.FC = () => {
                onAddHomeroomRecord={handleAddHomeroomRecord}
                onEditHomeroomRecord={handleEditHomeroomRecord}
                onDeleteHomeroomRecord={handleDeleteHomeroomRecord}
+               // Initial Tab Control
+               initialTab={
+                 viewMode === ViewMode.JOURNAL ? 'JOURNAL' :
+                 viewMode === ViewMode.MONITORING ? 'MONITORING' :
+                 viewMode === ViewMode.GRADES ? 'GRADES' :
+                 viewMode === ViewMode.HOMEROOM ? 'HOMEROOM' :
+                 viewMode === ViewMode.TEACHER_SCHEDULE ? 'TEACHER' :
+                 'CLASS' // Default for CLASS_SCHEDULE and VIEW_SCHEDULES
+               }
              />
           )}
+
           {viewMode === ViewMode.SETTINGS && userRole === 'ADMIN' && (
              <SettingsPanel 
                 settings={appSettings} 

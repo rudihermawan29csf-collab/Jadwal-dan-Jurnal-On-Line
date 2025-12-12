@@ -2,140 +2,27 @@ import { TeacherData, Student } from './types';
 
 export const CLASSES = ['VII A', 'VII B', 'VII C', 'VIII A', 'VIII B', 'VIII C', 'IX A', 'IX B', 'IX C'];
 
-export interface ScheduleRow {
-  jam: string;
-  waktu: string;
-  activity?: string;
-  isBreak?: boolean;
-}
-
-export interface DaySchedule {
-  day: string;
-  rows: ScheduleRow[];
-  allocatableSlots: string[];
-}
-
 export const COLOR_PALETTE = [
-  'bg-red-100 text-red-800 border-red-200',
-  'bg-orange-100 text-orange-800 border-orange-200',
-  'bg-amber-100 text-amber-800 border-amber-200',
-  'bg-yellow-100 text-yellow-800 border-yellow-200',
-  'bg-lime-100 text-lime-800 border-lime-200',
-  'bg-green-100 text-green-800 border-green-200',
-  'bg-emerald-100 text-emerald-800 border-emerald-200',
-  'bg-teal-100 text-teal-800 border-teal-200',
-  'bg-cyan-100 text-cyan-800 border-cyan-200',
-  'bg-sky-100 text-sky-800 border-sky-200',
-  'bg-blue-100 text-blue-800 border-blue-200',
-  'bg-indigo-100 text-indigo-800 border-indigo-200',
-  'bg-violet-100 text-violet-800 border-violet-200',
-  'bg-purple-100 text-purple-800 border-purple-200',
-  'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200',
-  'bg-pink-100 text-pink-800 border-pink-200',
-  'bg-rose-100 text-rose-800 border-rose-200',
-  'bg-stone-100 text-stone-800 border-stone-200',
-  'bg-blue-50 text-blue-900 border-blue-200',
-  'bg-red-50 text-red-900 border-red-200',
-];
-
-export const SCHEDULE_DATA: DaySchedule[] = [
-  {
-    day: "SENIN",
-    allocatableSlots: ["2", "3", "4", "5", "6", "7", "8"],
-    rows: [
-      { jam: "0", waktu: "06.30 - 06.45", activity: "Persiapan Upacara Bendera", isBreak: true },
-      { jam: "1", waktu: "06.45 - 07.40", activity: "Upacara Bendera", isBreak: true },
-      { jam: "2", waktu: "07.40 - 08.20" },
-      { jam: "3", waktu: "08.20 - 09.00" },
-      { jam: "", waktu: "09.00 - 09.20", activity: "Istirahat ke-1", isBreak: true },
-      { jam: "4", waktu: "09.20 - 10.00" },
-      { jam: "5", waktu: "10.00 - 10.40" },
-      { jam: "6", waktu: "10.40 - 11.20" },
-      { jam: "", waktu: "11.20 - 11.50", activity: "Istirahat 2 / Sholat Dzuhur Berjamaah", isBreak: true },
-      { jam: "7", waktu: "11.50 - 12.25" },
-      { jam: "8", waktu: "12.25 - 13.00" },
-    ]
-  },
-  {
-    day: "SELASA",
-    allocatableSlots: ["1", "2", "3", "4", "5", "6", "7", "8"],
-    rows: [
-      { jam: "0", waktu: "06.30 - 07.00", activity: "Apel Pagi / Pembacaan Surat Ar-Rahman", isBreak: true },
-      { jam: "1", waktu: "07.00 - 07.40" },
-      { jam: "2", waktu: "07.40 - 08.20" },
-      { jam: "3", waktu: "08.20 - 09.00" },
-      { jam: "", waktu: "09.00 - 09.20", activity: "Istirahat ke-1", isBreak: true },
-      { jam: "4", waktu: "09.20 - 10.00" },
-      { jam: "5", waktu: "10.00 - 10.40" },
-      { jam: "6", waktu: "10.40 - 11.20" },
-      { jam: "", waktu: "11.20 - 11.50", activity: "Istirahat 2 / Sholat Dzuhur Berjamaah", isBreak: true },
-      { jam: "7", waktu: "11.50 - 12.25" },
-      { jam: "8", waktu: "12.25 - 13.00" },
-    ]
-  },
-  {
-    day: "RABU",
-    allocatableSlots: ["1", "2", "3", "4", "5", "6", "7", "8"],
-    rows: [
-      { jam: "0", waktu: "06.30 - 07.00", activity: "Apel Pagi / Pembacaan Surat Al Waqi'ah", isBreak: true },
-      { jam: "1", waktu: "07.00 - 07.40" },
-      { jam: "2", waktu: "07.40 - 08.20" },
-      { jam: "3", waktu: "08.20 - 09.00" },
-      { jam: "", waktu: "09.00 - 09.20", activity: "Istirahat ke-1", isBreak: true },
-      { jam: "4", waktu: "09.20 - 10.00" },
-      { jam: "5", waktu: "10.00 - 10.40" },
-      { jam: "6", waktu: "10.40 - 11.20" },
-      { jam: "", waktu: "11.20 - 11.50", activity: "Istirahat 2 / Sholat Dzuhur Berjamaah", isBreak: true },
-      { jam: "7", waktu: "11.50 - 12.25" },
-      { jam: "8", waktu: "12.25 - 13.00" },
-    ]
-  },
-  {
-    day: "KAMIS",
-    allocatableSlots: ["1", "2", "3", "4", "5", "6", "7", "8"],
-    rows: [
-      { jam: "0", waktu: "06.30 - 07.00", activity: "Apel Pagi / Pembacaan Isitighotsah", isBreak: true },
-      { jam: "1", waktu: "07.00 - 07.40" },
-      { jam: "2", waktu: "07.40 - 08.20" },
-      { jam: "3", waktu: "08.20 - 09.00" },
-      { jam: "", waktu: "09.00 - 09.20", activity: "Istirahat ke-1", isBreak: true },
-      { jam: "4", waktu: "09.20 - 10.00" },
-      { jam: "5", waktu: "10.00 - 10.40" },
-      { jam: "6", waktu: "10.40 - 11.20" },
-      { jam: "", waktu: "11.20 - 11.50", activity: "Istirahat 2 / Sholat Dzuhur Berjamaah", isBreak: true },
-      { jam: "7", waktu: "11.50 - 12.25" },
-      { jam: "8", waktu: "12.25 - 13.00" },
-    ]
-  },
-  {
-    day: "JUM'AT",
-    allocatableSlots: ["1", "2", "3", "4", "5"],
-    rows: [
-      { jam: "0", waktu: "06.30 - 07.00", activity: "Apel Pagi / Pembacaan Surat Yasin", isBreak: true },
-      { jam: "1", waktu: "07.00 - 07.40" },
-      { jam: "2", waktu: "07.40 - 08.20" },
-      { jam: "3", waktu: "08.20 - 09.00" },
-      { jam: "", waktu: "09.00 - 09.20", activity: "Istirahat", isBreak: true },
-      { jam: "4", waktu: "09.20 - 10.00" },
-      { jam: "5", waktu: "10.00 - 10.40" },
-    ]
-  },
-  {
-    day: "SABTU",
-    allocatableSlots: ["2", "3", "4", "5", "6"],
-    rows: [
-      { jam: "0", waktu: "06.30 - 07.00", activity: "Apel Pagi / Pembacaan Asma'ul Husna dan Juz 'Amma", isBreak: true },
-      { jam: "1", waktu: "07.00 - 07.40", activity: "Sabtu Sehat Jiwa Raga", isBreak: true },
-      { jam: "2", waktu: "07.40 - 08.20" },
-      { jam: "3", waktu: "08.20 - 09.00" },
-      { jam: "", waktu: "09.00 - 09.20", activity: "Istirahat", isBreak: true },
-      { jam: "4", waktu: "09.20 - 10.00" },
-      { jam: "5", waktu: "10.00 - 10.40" },
-      { jam: "6", waktu: "10.40 - 11.20" },
-      { jam: "", waktu: "11.20 - 12.00", activity: "Sholat Dhuhur Berjamaah", isBreak: true },
-      { jam: "", waktu: "", activity: "Kegiatan Pengembangan Diri (Ekstra Kurikuler)", isBreak: true },
-    ]
-  }
+  'bg-red-100 border-red-200 text-red-700',
+  'bg-orange-100 border-orange-200 text-orange-700',
+  'bg-amber-100 border-amber-200 text-amber-700',
+  'bg-yellow-100 border-yellow-200 text-yellow-700',
+  'bg-lime-100 border-lime-200 text-lime-700',
+  'bg-green-100 border-green-200 text-green-700',
+  'bg-emerald-100 border-emerald-200 text-emerald-700',
+  'bg-teal-100 border-teal-200 text-teal-700',
+  'bg-cyan-100 border-cyan-200 text-cyan-700',
+  'bg-sky-100 border-sky-200 text-sky-700',
+  'bg-blue-100 border-blue-200 text-blue-700',
+  'bg-indigo-100 border-indigo-200 text-indigo-700',
+  'bg-violet-100 border-violet-200 text-violet-700',
+  'bg-purple-100 border-purple-200 text-purple-700',
+  'bg-fuchsia-100 border-fuchsia-200 text-fuchsia-700',
+  'bg-pink-100 border-pink-200 text-pink-700',
+  'bg-rose-100 border-rose-200 text-rose-700',
+  'bg-stone-100 border-stone-200 text-stone-700',
+  'bg-blue-50 border-blue-200 text-blue-900',
+  'bg-red-50 border-red-200 text-red-900',
 ];
 
 export const TEACHER_DATA: TeacherData[] = [
@@ -148,12 +35,12 @@ export const TEACHER_DATA: TeacherData[] = [
     gol: "III d",
     subject: "Bahasa Indonesia",
     code: "BIN-SH",
-    hoursVII: {},
-    hoursVIII: { B: 6, C: 6 },
+    hoursVII: { A: 0, B: 0, C: 0 },
+    hoursVIII: { A: 0, B: 0, C: 6 },
     hoursIX: { A: 6, B: 6, C: 6 },
     additionalTask: "Wali Kelas IX B, Guru Wali",
     additionalHours: 4,
-    totalHours: 34
+    totalHours: 28
   },
   {
     id: 2,
@@ -164,9 +51,9 @@ export const TEACHER_DATA: TeacherData[] = [
     gol: "III d",
     subject: "Ilmu Pengetahuan Sosial",
     code: "IPS-BR",
-    hoursVII: {},
+    hoursVII: { A: 0, B: 0, C: 0 },
     hoursVIII: { A: 4, B: 4, C: 4 },
-    hoursIX: {},
+    hoursIX: { A: 0, B: 0, C: 0 },
     additionalTask: "Kepala Laboratorium, Guru Wali",
     additionalHours: 14,
     totalHours: 26
@@ -213,7 +100,7 @@ export const TEACHER_DATA: TeacherData[] = [
     subject: "Bimbingan Konseling",
     code: "BK-OD",
     hoursVII: { A: 1, B: 1, C: 1 },
-    hoursVIII: {},
+    hoursVIII: { A: 0, B: 0, C: 0 },
     hoursIX: { A: 1, B: 1, C: 1 },
     additionalTask: "Wali Kelas VII C, Guru Wali",
     additionalHours: 4,
@@ -244,9 +131,9 @@ export const TEACHER_DATA: TeacherData[] = [
     gol: "IX",
     subject: "Bimbingan Konseling",
     code: "BK-MW",
-    hoursVII: {},
+    hoursVII: { A: 0, B: 0, C: 0 },
     hoursVIII: { A: 1, B: 1, C: 1 },
-    hoursIX: {},
+    hoursIX: { A: 0, B: 0, C: 0 },
     additionalTask: "Wakasek, Guru Wali",
     additionalHours: 14,
     totalHours: 17
@@ -260,8 +147,8 @@ export const TEACHER_DATA: TeacherData[] = [
     gol: "IX",
     subject: "Matematika",
     code: "MAT-PU",
-    hoursVII: {},
-    hoursVIII: { B: 5, C: 5 },
+    hoursVII: { A: 0, B: 0, C: 0 },
+    hoursVIII: { A: 0, B: 5, C: 5 },
     hoursIX: { A: 5, B: 5, C: 5 },
     additionalTask: "Wali Kelas IX C, Guru Wali",
     additionalHours: 4,
@@ -277,7 +164,7 @@ export const TEACHER_DATA: TeacherData[] = [
     subject: "Ilmu Pengetahuan Sosial",
     code: "IPS-MU",
     hoursVII: { A: 4, B: 4, C: 4 },
-    hoursVIII: {},
+    hoursVIII: { A: 0, B: 0, C: 0 },
     hoursIX: { A: 4, B: 4, C: 4 },
     additionalTask: "Wali Kelas VII A, Guru Wali",
     additionalHours: 4,
@@ -308,8 +195,8 @@ export const TEACHER_DATA: TeacherData[] = [
     gol: "",
     subject: "Ilmu Pengetahuan Alam",
     code: "IPA-RB",
-    hoursVII: { A: 5, B: 5 }, // Inferred from "5 5"
-    hoursVIII: {},
+    hoursVII: { A: 5, B: 5, C: 0 },
+    hoursVIII: { A: 0, B: 0, C: 0 },
     hoursIX: { A: 5, B: 5, C: 5 },
     additionalTask: "Wali Kelas VII B, Guru Wali",
     additionalHours: 4,
@@ -324,15 +211,15 @@ export const TEACHER_DATA: TeacherData[] = [
     gol: "",
     subject: "Ilmu Pengetahuan Alam",
     code: "IPA-MY",
-    hoursVII: {},
-    hoursVIII: { A: 5, B: 5, C: 5, D: 5 },
-    hoursIX: {},
-    additionalTask: "Guru Wali",
+    hoursVII: { A: 0, B: 0, C: 5 },
+    hoursVIII: { A: 5, B: 5, C: 5 },
+    hoursIX: { A: 0, B: 0, C: 0 },
+    additionalTask: "Wali Kelas VII A, Guru Wali",
     additionalHours: 2,
     totalHours: 22
   },
   {
-    id: 1201, // Second entry for same teacher
+    id: 1201,
     no: "",
     name: "Mukhamad Yunus, S.Pd",
     nip: "-",
@@ -340,9 +227,9 @@ export const TEACHER_DATA: TeacherData[] = [
     gol: "",
     subject: "Informatika",
     code: "INF-MY",
-    hoursVII: {},
-    hoursVIII: { A: 3, B: 3 },
-    hoursIX: {},
+    hoursVII: { A: 0, B: 0, C: 0 },
+    hoursVIII: { A: 3, B: 3, C: 0 },
+    hoursIX: { A: 0, B: 0, C: 0 },
     additionalTask: "-",
     additionalHours: 0,
     totalHours: 6
@@ -356,12 +243,12 @@ export const TEACHER_DATA: TeacherData[] = [
     gol: "",
     subject: "Bahasa Indonesia",
     code: "BIN-FW",
-    hoursVII: { A: 6, B: 6, C: 6, D: 6 },
-    hoursVIII: {},
-    hoursIX: {},
-    additionalTask: "-",
-    additionalHours: 0,
-    totalHours: 24
+    hoursVII: { A: 6, B: 6, C: 6 },
+    hoursVIII: { A: 6, B: 6, C: 0 },
+    hoursIX: { A: 0, B: 0, C: 0 },
+    additionalTask: "Guru Wali",
+    additionalHours: 2,
+    totalHours: 32
   },
   {
     id: 14,
@@ -375,9 +262,9 @@ export const TEACHER_DATA: TeacherData[] = [
     hoursVII: { A: 2, B: 2, C: 2 },
     hoursVIII: { A: 2, B: 2, C: 2 },
     hoursIX: { A: 2, B: 2, C: 2 },
-    additionalTask: "-",
-    additionalHours: 0,
-    totalHours: 18
+    additionalTask: "Guru Wali",
+    additionalHours: 2,
+    totalHours: 20
   },
   {
     id: 1401,
@@ -389,8 +276,8 @@ export const TEACHER_DATA: TeacherData[] = [
     subject: "Informatika",
     code: "INF-FA",
     hoursVII: { A: 3, B: 3, C: 3 },
-    hoursVIII: {},
-    hoursIX: {},
+    hoursVIII: { A: 0, B: 0, C: 0 },
+    hoursIX: { A: 0, B: 0, C: 0 },
     additionalTask: "-",
     additionalHours: 0,
     totalHours: 9
@@ -404,7 +291,7 @@ export const TEACHER_DATA: TeacherData[] = [
     gol: "IX",
     subject: "Bahasa Inggris",
     code: "BIG-RN",
-    hoursVII: {},
+    hoursVII: { A: 0, B: 0, C: 0 },
     hoursVIII: { A: 4, B: 4, C: 4 },
     hoursIX: { A: 4, B: 4, C: 4 },
     additionalTask: "Wali Kelas VIII C, Guru Wali",
@@ -420,9 +307,9 @@ export const TEACHER_DATA: TeacherData[] = [
     gol: "IX",
     subject: "Matematika",
     code: "MAT-EM",
-    hoursVII: { A: 5, B: 5, C: 5, D: 5 },
-    hoursVIII: {},
-    hoursIX: {},
+    hoursVII: { A: 5, B: 5, C: 5 },
+    hoursVIII: { A: 5, B: 0, C: 0 },
+    hoursIX: { A: 0, B: 0, C: 0 },
     additionalTask: "Guru Wali",
     additionalHours: 2,
     totalHours: 22
@@ -436,9 +323,9 @@ export const TEACHER_DATA: TeacherData[] = [
     gol: "IX",
     subject: "Informatika",
     code: "INF-EM",
-    hoursVII: {},
-    hoursVIII: { B: 3, C: 3 },
-    hoursIX: {},
+    hoursVII: { A: 0, B: 0, C: 0 },
+    hoursVIII: { A: 0, B: 0, C: 3 },
+    hoursIX: { A: 3, B: 0, C: 0 },
     additionalTask: "-",
     additionalHours: 0,
     totalHours: 6
@@ -453,8 +340,8 @@ export const TEACHER_DATA: TeacherData[] = [
     subject: "Bahasa Inggris",
     code: "BIG-AH",
     hoursVII: { A: 4, B: 4, C: 4 },
-    hoursVIII: {},
-    hoursIX: {},
+    hoursVIII: { A: 0, B: 0, C: 0 },
+    hoursIX: { A: 0, B: 0, C: 0 },
     additionalTask: "Kepala Perpustakaan, Guru Wali",
     additionalHours: 14,
     totalHours: 26
@@ -466,11 +353,11 @@ export const TEACHER_DATA: TeacherData[] = [
     nip: "197201011999031001",
     rank: "Penata Muda Tk I",
     gol: "III b",
-    subject: "Bahasa Inggris", // Likely typo in source, meant Informatika or similar based on hours
+    subject: "Bahasa Inggris", 
     code: "INF-AH",
-    hoursVIII: {},
-    hoursIX: { A: 3, B: 3 },
-    hoursVII: {},
+    hoursVII: { A: 0, B: 0, C: 0 },
+    hoursVIII: { A: 0, B: 0, C: 0 },
+    hoursIX: { A: 0, B: 3, C: 3 },
     additionalTask: "-",
     additionalHours: 0,
     totalHours: 6
@@ -749,3 +636,269 @@ export const INITIAL_STUDENTS: Student[] = [
   { id: "269", className: "IX C", name: "SAHAZIKA GISTIANO MAISEGALUNG" },
   { id: "270", className: "IX C", name: "ACHMAD SAIFUL ANWAR" }
 ];
+
+export const SCHEDULE_DATA = [
+  {
+    day: "SENIN",
+    rows: [
+      { jam: "0", waktu: "06.30 - 06.45", activity: "Persiapan Upacara Bendera" },
+      { jam: "1", waktu: "06.45 - 07.40", activity: "Upacara Bendera" },
+      { jam: "2", waktu: "07.40 - 08.20" },
+      { jam: "3", waktu: "08.20 - 09.00" },
+      { jam: "", waktu: "09.00 - 09.20", activity: "Istirahat ke-1" },
+      { jam: "4", waktu: "09.20 - 10.00" },
+      { jam: "5", waktu: "10.00 - 10.40" },
+      { jam: "6", waktu: "10.40 - 11.20" },
+      { jam: "", waktu: "11.20 - 11.50", activity: "Istirahat 2 / Sholat Dzuhur Berjamaah" },
+      { jam: "7", waktu: "11.50 - 12.25" },
+      { jam: "8", waktu: "12.25 - 13.00" },
+    ]
+  },
+  {
+    day: "SELASA",
+    rows: [
+      { jam: "0", waktu: "06.30 - 07.00", activity: "Apel Pagi / Pembacaan Surat Ar-Rahman" },
+      { jam: "1", waktu: "07.00 - 07.40" },
+      { jam: "2", waktu: "07.40 - 08.20" },
+      { jam: "3", waktu: "08.20 - 09.00" },
+      { jam: "", waktu: "09.00 - 09.20", activity: "Istirahat ke-1" },
+      { jam: "4", waktu: "09.20 - 10.00" },
+      { jam: "5", waktu: "10.00 - 10.40" },
+      { jam: "6", waktu: "10.40 - 11.20" },
+      { jam: "", waktu: "11.20 - 11.50", activity: "Istirahat 2 / Sholat Dzuhur Berjamaah" },
+      { jam: "7", waktu: "11.50 - 12.25" },
+      { jam: "8", waktu: "12.25 - 13.00" },
+    ]
+  },
+  {
+    day: "RABU",
+    rows: [
+      { jam: "0", waktu: "06.30 - 07.00", activity: "Apel Pagi / Pembacaan Surat Al Waqi'ah" },
+      { jam: "1", waktu: "07.00 - 07.40" },
+      { jam: "2", waktu: "07.40 - 08.20" },
+      { jam: "3", waktu: "08.20 - 09.00" },
+      { jam: "", waktu: "09.00 - 09.20", activity: "Istirahat ke-1" },
+      { jam: "4", waktu: "09.20 - 10.00" },
+      { jam: "5", waktu: "10.00 - 10.40" },
+      { jam: "6", waktu: "10.40 - 11.20" },
+      { jam: "", waktu: "11.20 - 11.50", activity: "Istirahat 2 / Sholat Dzuhur Berjamaah" },
+      { jam: "7", waktu: "11.50 - 12.25" },
+      { jam: "8", waktu: "12.25 - 13.00" },
+    ]
+  },
+  {
+    day: "KAMIS",
+    rows: [
+      { jam: "0", waktu: "06.30 - 07.00", activity: "Apel Pagi / Pembacaan Isitighotsah" },
+      { jam: "1", waktu: "07.00 - 07.40" },
+      { jam: "2", waktu: "07.40 - 08.20" },
+      { jam: "3", waktu: "08.20 - 09.00" },
+      { jam: "", waktu: "09.00 - 09.20", activity: "Istirahat ke-1" },
+      { jam: "4", waktu: "09.20 - 10.00" },
+      { jam: "5", waktu: "10.00 - 10.40" },
+      { jam: "6", waktu: "10.40 - 11.20" },
+      { jam: "", waktu: "11.20 - 11.50", activity: "Istirahat 2 / Sholat Dzuhur Berjamaah" },
+      { jam: "7", waktu: "11.50 - 12.25" },
+      { jam: "8", waktu: "12.25 - 13.00" },
+    ]
+  },
+  {
+    day: "JUM'AT",
+    rows: [
+      { jam: "0", waktu: "06.30 - 07.00", activity: "Apel Pagi / Pembacaan Surat Yasin" },
+      { jam: "1", waktu: "07.00 - 07.40" },
+      { jam: "2", waktu: "07.40 - 08.20" },
+      { jam: "3", waktu: "08.20 - 09.00" },
+      { jam: "", waktu: "09.00 - 09.20", activity: "Istirahat" },
+      { jam: "4", waktu: "09.20 - 10.00" },
+      { jam: "5", waktu: "10.00 - 10.40" },
+    ]
+  },
+  {
+    day: "SABTU",
+    rows: [
+      { jam: "0", waktu: "06.30 - 07.00", activity: "Apel Pagi / Pembacaan Asma'ul Husna dan Juz 'Amma" },
+      { jam: "1", waktu: "07.00 - 07.40", activity: "Sabtu Sehat Jiwa Raga" },
+      { jam: "2", waktu: "07.40 - 08.20" },
+      { jam: "3", waktu: "08.20 - 09.00" },
+      { jam: "", waktu: "09.00 - 09.20", activity: "Istirahat" },
+      { jam: "4", waktu: "09.20 - 10.00" },
+      { jam: "5", waktu: "10.00 - 10.40" },
+      { jam: "6", waktu: "10.40 - 11.20" },
+      { jam: "", waktu: "11.20 - 12.00", activity: "Sholat Dhuhur Berjamaah" },
+      { jam: "", waktu: "", activity: "Kegiatan Pengembangan Diri (Ekstra Kurikuler)" },
+    ]
+  }
+];
+
+export const DEFAULT_SCHEDULE_MAP: Record<string, string> = {
+  // SENIN
+  'SENIN-2-VII A': 'SENI-FA', 'SENIN-2-VII B': 'IPA-RB', 'SENIN-2-VII C': 'BIN-FW',
+  'SENIN-2-VIII A': 'BIG-RN', 'SENIN-2-VIII B': 'IPA-MY', 'SENIN-2-VIII C': 'IPS-BR',
+  'SENIN-2-IX A': 'INF-EM', 'SENIN-2-IX B': 'IPS-MU', 'SENIN-2-IX C': 'BIN-SH',
+
+  'SENIN-3-VII A': 'SENI-FA', 'SENIN-3-VII B': 'IPA-RB', 'SENIN-3-VII C': 'BIN-FW',
+  'SENIN-3-VIII A': 'BIG-RN', 'SENIN-3-VIII B': 'IPA-MY', 'SENIN-3-VIII C': 'IPS-BR',
+  'SENIN-3-IX A': 'INF-EM', 'SENIN-3-IX B': 'IPS-MU', 'SENIN-3-IX C': 'BIN-SH',
+
+  'SENIN-4-VII A': 'PAI-RH', 'SENIN-4-VII B': 'IPA-RB', 'SENIN-4-VII C': 'BIN-FW',
+  'SENIN-4-VIII A': 'BAJA-SB', 'SENIN-4-VIII B': 'MAT-PU', 'SENIN-4-VIII C': 'BIG-RN',
+  'SENIN-4-IX A': 'INF-EM', 'SENIN-4-IX B': 'PJOK-MH', 'SENIN-4-IX C': 'BIN-SH',
+
+  'SENIN-5-VII A': 'PAI-RH', 'SENIN-5-VII B': 'IPS-MU', 'SENIN-5-VII C': 'BIG-AH',
+  'SENIN-5-VIII A': 'BAJA-SB', 'SENIN-5-VIII B': 'MAT-PU', 'SENIN-5-VIII C': 'BIG-RN',
+  'SENIN-5-IX A': 'SENI-FA', 'SENIN-5-IX B': 'PJOK-MH', 'SENIN-5-IX C': 'BK-OD',
+
+  'SENIN-6-VII A': 'PAI-RH', 'SENIN-6-VII B': 'IPS-MU', 'SENIN-6-VII C': 'BIG-AH',
+  'SENIN-6-VIII A': 'INF-MY', 'SENIN-6-VIII B': 'BIN-FW', 'SENIN-6-VIII C': 'MAT-PU',
+  'SENIN-6-IX A': 'SENI-FA', 'SENIN-6-IX B': 'PJOK-MH', 'SENIN-6-IX C': 'PKN-EH',
+
+  'SENIN-7-VII A': 'IPS-MU', 'SENIN-7-VII B': 'BAJA-SB', 'SENIN-7-VII C': 'MAT-EM',
+  'SENIN-7-VIII A': 'INF-MY', 'SENIN-7-VIII B': 'BIN-FW', 'SENIN-7-VIII C': 'MAT-PU',
+  'SENIN-7-IX A': 'BIG-RN', 'SENIN-7-IX B': 'BIN-SH', 'SENIN-7-IX C': 'PKN-EH',
+
+  'SENIN-8-VII A': 'IPS-MU', 'SENIN-8-VII B': 'BAJA-SB', 'SENIN-8-VII C': 'MAT-EM',
+  'SENIN-8-VIII A': 'INF-MY', 'SENIN-8-VIII B': 'BIN-FW', 'SENIN-8-VIII C': 'MAT-PU',
+  'SENIN-8-IX A': 'BIG-RN', 'SENIN-8-IX B': 'BIN-SH', 'SENIN-8-IX C': 'PKN-EH',
+
+  // SELASA
+  'SELASA-1-VII A': 'PJOK-MH', 'SELASA-1-VII B': 'PAI-RH', 'SELASA-1-VII C': 'INF-FA',
+  'SELASA-1-VIII A': 'BIN-FW', 'SELASA-1-VIII B': 'BIG-RN', 'SELASA-1-VIII C': 'BAJA-SB',
+  'SELASA-1-IX A': 'PKN-EH', 'SELASA-1-IX B': 'MAT-PU', 'SELASA-1-IX C': 'BIN-SH',
+
+  'SELASA-2-VII A': 'PJOK-MH', 'SELASA-2-VII B': 'PAI-RH', 'SELASA-2-VII C': 'INF-FA',
+  'SELASA-2-VIII A': 'BIN-FW', 'SELASA-2-VIII B': 'BIG-RN', 'SELASA-2-VIII C': 'BAJA-SB',
+  'SELASA-2-IX A': 'PKN-EH', 'SELASA-2-IX B': 'MAT-PU', 'SELASA-2-IX C': 'BIN-SH',
+
+  'SELASA-3-VII A': 'PJOK-MH', 'SELASA-3-VII B': 'PAI-RH', 'SELASA-3-VII C': 'INF-FA',
+  'SELASA-3-VIII A': 'BIN-FW', 'SELASA-3-VIII B': 'BK-MW', 'SELASA-3-VIII C': 'INF-EM',
+  'SELASA-3-IX A': 'PKN-EH', 'SELASA-3-IX B': 'MAT-PU', 'SELASA-3-IX C': 'BIN-SH',
+
+  'SELASA-4-VII A': 'INF-FA', 'SELASA-4-VII B': 'PJOK-MH', 'SELASA-4-VII C': 'IPS-MU',
+  'SELASA-4-VIII A': 'IPA-MY', 'SELASA-4-VIII B': 'BIN-FW', 'SELASA-4-VIII C': 'INF-EM',
+  'SELASA-4-IX A': 'IPA-RB', 'SELASA-4-IX B': 'BK-OD', 'SELASA-4-IX C': 'BAJA-SB',
+
+  'SELASA-5-VII A': 'INF-FA', 'SELASA-5-VII B': 'PJOK-MH', 'SELASA-5-VII C': 'IPS-MU',
+  'SELASA-5-VIII A': 'IPA-MY', 'SELASA-5-VIII B': 'BIN-FW', 'SELASA-5-VIII C': 'INF-EM',
+  'SELASA-5-IX A': 'IPA-RB', 'SELASA-5-IX B': 'BIN-SH', 'SELASA-5-IX C': 'BAJA-SB',
+
+  'SELASA-6-VII A': 'INF-FA', 'SELASA-6-VII B': 'PJOK-MH', 'SELASA-6-VII C': 'PAI-RH',
+  'SELASA-6-VIII A': 'IPA-MY', 'SELASA-6-VIII B': 'BIN-FW', 'SELASA-6-VIII C': 'PKN-EH',
+  'SELASA-6-IX A': 'IPA-RB', 'SELASA-6-IX B': 'BIN-SH', 'SELASA-6-IX C': 'INF-AH',
+
+  'SELASA-7-VII A': 'IPA-RB', 'SELASA-7-VII B': 'SENI-FA', 'SELASA-7-VII C': 'PAI-RH',
+  'SELASA-7-VIII A': 'BIG-RN', 'SELASA-7-VIII B': 'IPS-BR', 'SELASA-7-VIII C': 'PKN-EH',
+  'SELASA-7-IX A': 'IPS-MU', 'SELASA-7-IX B': 'BAJA-SB', 'SELASA-7-IX C': 'INF-AH',
+
+  'SELASA-8-VII A': 'IPA-RB', 'SELASA-8-VII B': 'SENI-FA', 'SELASA-8-VII C': 'PAI-RH',
+  'SELASA-8-VIII A': 'BIG-RN', 'SELASA-8-VIII B': 'IPS-BR', 'SELASA-8-VIII C': 'PKN-EH',
+  'SELASA-8-IX A': 'IPS-MU', 'SELASA-8-IX B': 'BAJA-SB', 'SELASA-8-IX C': 'INF-AH',
+
+  // RABU
+  'RABU-1-VII A': 'BIN-FW', 'RABU-1-VII B': 'INF-FA', 'RABU-1-VII C': 'PJOK-MH',
+  'RABU-1-VIII A': 'PAI-RH', 'RABU-1-VIII B': 'INF-MY', 'RABU-1-VIII C': 'BIN-SH',
+  'RABU-1-IX A': 'MAT-PU', 'RABU-1-IX B': 'PKN-EH', 'RABU-1-IX C': 'IPA-RB',
+
+  'RABU-2-VII A': 'BIN-FW', 'RABU-2-VII B': 'INF-FA', 'RABU-2-VII C': 'PJOK-MH',
+  'RABU-2-VIII A': 'PAI-RH', 'RABU-2-VIII B': 'INF-MY', 'RABU-2-VIII C': 'BIN-SH',
+  'RABU-2-IX A': 'MAT-PU', 'RABU-2-IX B': 'PKN-EH', 'RABU-2-IX C': 'IPA-RB',
+
+  'RABU-3-VII A': 'BIN-FW', 'RABU-3-VII B': 'INF-FA', 'RABU-3-VII C': 'PJOK-MH',
+  'RABU-3-VIII A': 'PAI-RH', 'RABU-3-VIII B': 'INF-MY', 'RABU-3-VIII C': 'BIN-SH',
+  'RABU-3-IX A': 'MAT-PU', 'RABU-3-IX B': 'PKN-EH', 'RABU-3-IX C': 'IPA-RB',
+
+  'RABU-4-VII A': 'IPA-RB', 'RABU-4-VII B': 'PKN-EH', 'RABU-4-VII C': 'BIN-FW',
+  'RABU-4-VIII A': 'PJOK-MH', 'RABU-4-VIII B': 'SENI-FA', 'RABU-4-VIII C': 'BIG-RN',
+  'RABU-4-IX A': 'IPS-MU', 'RABU-4-IX B': 'INF-AH', 'RABU-4-IX C': 'MAT-PU',
+
+  'RABU-5-VII A': 'IPA-RB', 'RABU-5-VII B': 'PKN-EH', 'RABU-5-VII C': 'BIN-FW',
+  'RABU-5-VIII A': 'PJOK-MH', 'RABU-5-VIII B': 'SENI-FA', 'RABU-5-VIII C': 'BIG-RN',
+  'RABU-5-IX A': 'IPS-MU', 'RABU-5-IX B': 'INF-AH', 'RABU-5-IX C': 'MAT-PU',
+
+  'RABU-6-VII A': 'IPA-RB', 'RABU-6-VII B': 'PKN-EH', 'RABU-6-VII C': 'BIN-FW',
+  'RABU-6-VIII A': 'PJOK-MH', 'RABU-6-VIII B': 'PAI-RH', 'RABU-6-VIII C': 'IPA-MY',
+  'RABU-6-IX A': 'BIN-SH', 'RABU-6-IX B': 'INF-AH', 'RABU-6-IX C': 'MAT-PU',
+
+  'RABU-7-VII A': 'BIG-AH', 'RABU-7-VII B': 'IPA-RB', 'RABU-7-VII C': 'SENI-FA',
+  'RABU-7-VIII A': 'IPS-BR', 'RABU-7-VIII B': 'PAI-RH', 'RABU-7-VIII C': 'IPA-MY',
+  'RABU-7-IX A': 'BIN-SH', 'RABU-7-IX B': 'IPS-MU', 'RABU-7-IX C': 'MAT-PU',
+
+  'RABU-8-VII A': 'BIG-AH', 'RABU-8-VII B': 'IPA-RB', 'RABU-8-VII C': 'SENI-FA',
+  'RABU-8-VIII A': 'IPS-BR', 'RABU-8-VIII B': 'PAI-RH', 'RABU-8-VIII C': 'IPA-MY',
+  'RABU-8-IX A': 'BIN-SH', 'RABU-8-IX B': 'IPS-MU', 'RABU-8-IX C': 'MAT-PU',
+
+  // KAMIS
+  'KAMIS-1-VII A': 'BIN-FW', 'KAMIS-1-VII B': 'BK-OD', 'KAMIS-1-VII C': 'MAT-EM',
+  'KAMIS-1-VIII A': 'IPA-MY', 'KAMIS-1-VIII B': 'IPS-BR', 'KAMIS-1-VIII C': 'PAI-RH',
+  'KAMIS-1-IX A': 'PJOK-MH', 'KAMIS-1-IX B': 'IPA-RB', 'KAMIS-1-IX C': 'BIG-RN',
+
+  'KAMIS-2-VII A': 'BIN-FW', 'KAMIS-2-VII B': 'BIG-AH', 'KAMIS-2-VII C': 'MAT-EM',
+  'KAMIS-2-VIII A': 'IPA-MY', 'KAMIS-2-VIII B': 'IPS-BR', 'KAMIS-2-VIII C': 'PAI-RH',
+  'KAMIS-2-IX A': 'PJOK-MH', 'KAMIS-2-IX B': 'IPA-RB', 'KAMIS-2-IX C': 'BIG-RN',
+
+  'KAMIS-3-VII A': 'BIN-FW', 'KAMIS-3-VII B': 'BIG-AH', 'KAMIS-3-VII C': 'MAT-EM',
+  'KAMIS-3-VIII A': 'PKN-EH', 'KAMIS-3-VIII B': 'IPA-MY', 'KAMIS-3-VIII C': 'PAI-RH',
+  'KAMIS-3-IX A': 'PJOK-MH', 'KAMIS-3-IX B': 'MAT-PU', 'KAMIS-3-IX C': 'IPA-RB',
+
+  'KAMIS-4-VII A': 'MAT-EM', 'KAMIS-4-VII B': 'BIN-FW', 'KAMIS-4-VII C': 'IPS-MU',
+  'KAMIS-4-VIII A': 'PKN-EH', 'KAMIS-4-VIII B': 'IPA-MY', 'KAMIS-4-VIII C': 'PJOK-MH',
+  'KAMIS-4-IX A': 'PAI-RH', 'KAMIS-4-IX B': 'MAT-PU', 'KAMIS-4-IX C': 'IPA-RB',
+
+  'KAMIS-5-VII A': 'MAT-EM', 'KAMIS-5-VII B': 'BIN-FW', 'KAMIS-5-VII C': 'IPS-MU',
+  'KAMIS-5-VIII A': 'PKN-EH', 'KAMIS-5-VIII B': 'IPA-MY', 'KAMIS-5-VIII C': 'PJOK-MH',
+  'KAMIS-5-IX A': 'PAI-RH', 'KAMIS-5-IX B': 'BIG-RN', 'KAMIS-5-IX C': 'SENI-FA',
+
+  'KAMIS-6-VII A': 'MAT-EM', 'KAMIS-6-VII B': 'BIN-FW', 'KAMIS-6-VII C': 'PKN-EH',
+  'KAMIS-6-VIII A': 'BK-MW', 'KAMIS-6-VIII B': 'MAT-PU', 'KAMIS-6-VIII C': 'PJOK-MH',
+  'KAMIS-6-IX A': 'PAI-RH', 'KAMIS-6-IX B': 'BIG-RN', 'KAMIS-6-IX C': 'SENI-FA',
+
+  'KAMIS-7-VII A': 'BIG-AH', 'KAMIS-7-VII B': 'MAT-EM', 'KAMIS-7-VII C': 'PKN-EH',
+  'KAMIS-7-VIII A': 'SENI-FA', 'KAMIS-7-VIII B': 'MAT-PU', 'KAMIS-7-VIII C': 'IPS-BR',
+  'KAMIS-7-IX A': 'IPA-RB', 'KAMIS-7-IX B': 'BIN-SH', 'KAMIS-7-IX C': 'BIG-RN',
+
+  'KAMIS-8-VII A': 'BIG-AH', 'KAMIS-8-VII B': 'MAT-EM', 'KAMIS-8-VII C': 'PKN-EH',
+  'KAMIS-8-VIII A': 'SENI-FA', 'KAMIS-8-VIII B': 'MAT-PU', 'KAMIS-8-VIII C': 'IPS-BR',
+  'KAMIS-8-IX A': 'IPA-RB', 'KAMIS-8-IX B': 'BIN-SH', 'KAMIS-8-IX C': 'BIG-RN',
+
+  // JUM'AT
+  "JUM'AT-1-VII A": 'MAT-EM', "JUM'AT-1-VII B": 'IPS-MU', "JUM'AT-1-VII C": 'BIG-AH',
+  "JUM'AT-1-VIII A": 'IPS-BR', "JUM'AT-1-VIII B": 'PKN-EH', "JUM'AT-1-VIII C": 'IPA-MY',
+  "JUM'AT-1-IX A": 'BAJA-SB', "JUM'AT-1-IX B": 'BIG-RN', "JUM'AT-1-IX C": 'PJOK-MH',
+
+  "JUM'AT-2-VII A": 'MAT-EM', "JUM'AT-2-VII B": 'IPS-MU', "JUM'AT-2-VII C": 'BIG-AH',
+  "JUM'AT-2-VIII A": 'IPS-BR', "JUM'AT-2-VIII B": 'PKN-EH', "JUM'AT-2-VIII C": 'IPA-MY',
+  "JUM'AT-2-IX A": 'BAJA-SB', "JUM'AT-2-IX B": 'BIG-RN', "JUM'AT-2-IX C": 'PJOK-MH',
+
+  "JUM'AT-3-VII A": 'BAJA-SB', "JUM'AT-3-VII B": 'BIN-FW', "JUM'AT-3-VII C": 'BK-OD',
+  "JUM'AT-3-VIII A": 'MAT-EM', "JUM'AT-3-VIII B": 'PKN-EH', "JUM'AT-3-VIII C": 'BK-MW',
+  "JUM'AT-3-IX A": 'BIN-SH', "JUM'AT-3-IX B": 'PAI-RH', "JUM'AT-3-IX C": 'PJOK-MH',
+
+  "JUM'AT-4-VII A": 'BAJA-SB', "JUM'AT-4-VII B": 'BIN-FW', "JUM'AT-4-VII C": 'IPA-MY',
+  "JUM'AT-4-VIII A": 'MAT-EM', "JUM'AT-4-VIII B": 'BIG-RN', "JUM'AT-4-VIII C": 'MAT-PU',
+  "JUM'AT-4-IX A": 'BIN-SH', "JUM'AT-4-IX B": 'PAI-RH', "JUM'AT-4-IX C": 'IPS-MU',
+
+  "JUM'AT-5-VII A": 'BK-OD', "JUM'AT-5-VII B": 'BIN-FW', "JUM'AT-5-VII C": 'IPA-MY',
+  "JUM'AT-5-VIII A": 'MAT-EM', "JUM'AT-5-VIII B": 'BIG-RN', "JUM'AT-5-VIII C": 'MAT-PU',
+  "JUM'AT-5-IX A": 'BIN-SH', "JUM'AT-5-IX B": 'PAI-RH', "JUM'AT-5-IX C": 'IPS-MU',
+
+  // SABTU
+  'SABTU-2-VII A': 'PKN-EH', 'SABTU-2-VII B': 'BIG-AH', 'SABTU-2-VII C': 'BAJA-SB',
+  'SABTU-2-VIII A': 'MAT-EM', 'SABTU-2-VIII B': 'PJOK-MH', 'SABTU-2-VIII C': 'SENI-FA',
+  'SABTU-2-IX A': 'MAT-PU', 'SABTU-2-IX B': 'IPA-RB', 'SABTU-2-IX C': 'IPS-MU',
+
+  'SABTU-3-VII A': 'PKN-EH', 'SABTU-3-VII B': 'BIG-AH', 'SABTU-3-VII C': 'BAJA-SB',
+  'SABTU-3-VIII A': 'MAT-EM', 'SABTU-3-VIII B': 'PJOK-MH', 'SABTU-3-VIII C': 'SENI-FA',
+  'SABTU-3-IX A': 'MAT-PU', 'SABTU-3-IX B': 'IPA-RB', 'SABTU-3-IX C': 'IPS-MU',
+
+  'SABTU-4-VII A': 'PKN-EH', 'SABTU-4-VII B': 'MAT-EM', 'SABTU-4-VII C': 'IPA-MY',
+  'SABTU-4-VIII A': 'BIN-FW', 'SABTU-4-VIII B': 'PJOK-MH', 'SABTU-4-VIII C': 'BIN-SH',
+  'SABTU-4-IX A': 'BK-OD', 'SABTU-4-IX B': 'IPA-RB', 'SABTU-4-IX C': 'PAI-RH',
+
+  'SABTU-5-VII A': 'IPS-MU', 'SABTU-5-VII B': 'MAT-EM', 'SABTU-5-VII C': 'IPA-MY',
+  'SABTU-5-VIII A': 'BIN-FW', 'SABTU-5-VIII B': 'BAJA-SB', 'SABTU-5-VIII C': 'BIN-SH',
+  'SABTU-5-IX A': 'BIG-RN', 'SABTU-5-IX B': 'SENI-FA', 'SABTU-5-IX C': 'PAI-RH',
+
+  'SABTU-6-VII A': 'IPS-MU', 'SABTU-6-VII B': 'MAT-EM', 'SABTU-6-VII C': 'IPA-MY',
+  'SABTU-6-VIII A': 'BIN-FW', 'SABTU-6-VIII B': 'BAJA-SB', 'SABTU-6-VIII C': 'BIN-SH',
+  'SABTU-6-IX A': 'BIG-RN', 'SABTU-6-IX B': 'SENI-FA', 'SABTU-6-IX C': 'PAI-RH',
+};

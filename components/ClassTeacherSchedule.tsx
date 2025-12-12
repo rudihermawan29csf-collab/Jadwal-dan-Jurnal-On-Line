@@ -1,17 +1,16 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
-  Download, FileText, FileSpreadsheet, Save, Info, Trash2, 
-  PenTool, BookOpen, Plus, X, List, Edit2, Filter, ChevronDown,
-  User, Users, Calendar, Layout, Search, GraduationCap, ClipboardList
+  Download, PenTool, BookOpen, Plus, X, List, Edit2, Filter, ChevronDown,
+  User, Users, Calendar, Layout, Search, GraduationCap, ClipboardList, Trash2, FileSpreadsheet
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { 
   TeacherData, AppSettings, CalendarEvent, TeacherLeave, 
-  TeachingMaterial, TeachingJournal, Student, UserRole, GradeRecord, HomeroomRecord 
+  TeachingMaterial, TeachingJournal, Student, UserRole, GradeRecord, HomeroomRecord, ChapterGrade
 } from '../types';
-import { CLASSES, SCHEDULE_DATA, COLOR_PALETTE } from '../constants';
+import { CLASSES, SCHEDULE_DATA } from '../constants';
 
 interface ClassTeacherScheduleProps {
   teacherData: TeacherData[];
@@ -24,6 +23,7 @@ interface ClassTeacherScheduleProps {
   students?: Student[];
   teachingMaterials?: TeachingMaterial[];
   onAddMaterial?: (material: TeachingMaterial) => void;
+  onEditMaterial?: (material: TeachingMaterial) => void;
   onDeleteMaterial?: (id: string) => void;
   teachingJournals?: TeachingJournal[];
   onAddJournal?: (journal: TeachingJournal) => void;
@@ -35,10 +35,11 @@ interface ClassTeacherScheduleProps {
   onAddHomeroomRecord?: (record: HomeroomRecord) => void;
   onEditHomeroomRecord?: (record: HomeroomRecord) => void;
   onDeleteHomeroomRecord?: (id: string) => void;
+  initialTab?: TabMode;
 }
 
 type TabMode = 'CLASS' | 'TEACHER' | 'JOURNAL' | 'MONITORING' | 'GRADES' | 'HOMEROOM';
-type AttendanceStatus = 'HADIR' | 'TIDAK_HADIR' | 'DINAS_LUAR';
+type AttendanceStatus = 'HADIR' | 'SAKIT' | 'IZIN' | 'ALPHA';
 type AttendanceRecord = Record<string, AttendanceStatus>;
 
 const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({ 
@@ -47,11 +48,10 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   currentUser, 
   role,
   appSettings,
-  calendarEvents = [],
-  teacherLeaves = [],
   students = [],
   teachingMaterials = [],
   onAddMaterial,
+  onEditMaterial,
   onDeleteMaterial,
   teachingJournals = [],
   onAddJournal,
@@ -62,18 +62,14 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   homeroomRecords = [],
   onAddHomeroomRecord,
   onEditHomeroomRecord,
-  onDeleteHomeroomRecord
+  onDeleteHomeroomRecord,
+  initialTab = 'CLASS'
 }) => {
-  const [activeTab, setActiveTab] = useState<TabMode>('CLASS');
+  const [activeTab, setActiveTab] = useState<TabMode>(initialTab);
 
-  // Set default tab based on role on mount
   useEffect(() => {
-    if (role === 'TEACHER') {
-      setActiveTab('TEACHER');
-    } else {
-      setActiveTab('CLASS');
-    }
-  }, [role]);
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   const [selectedClass, setSelectedClass] = useState<string>(() => {
     if (role === 'STUDENT' && currentUser && CLASSES.includes(currentUser)) {
@@ -89,19 +85,10 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
     return "";
   });
 
-  const [attendanceDate, setAttendanceDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [attendanceData, setAttendanceData] = useState<AttendanceRecord>(() => {
-    try {
-      const saved = localStorage.getItem('attendanceRecords');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
-
   // Journal States
   const [journalMode, setJournalMode] = useState<'INPUT_MATERI' | 'INPUT_JURNAL'>('INPUT_JURNAL');
   const [editingJournalId, setEditingJournalId] = useState<string | null>(null);
+  const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
   const [journalFilterClass, setJournalFilterClass] = useState<string>(''); 
   const [journalDateFrom, setJournalDateFrom] = useState<string>('');
   const [journalDateTo, setJournalDateTo] = useState<string>('');
@@ -109,6 +96,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
 
   // Monitoring States
   const [monitoringClass, setMonitoringClass] = useState<string>(CLASSES[0]);
+  const [monitoringSemester, setMonitoringSemester] = useState<string>(appSettings.semester);
   
   // Grade States
   const [gradeClass, setGradeClass] = useState<string>(CLASSES[0]);
@@ -120,14 +108,14 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   const [homeroomForm, setHomeroomForm] = useState<{
     date: string;
     className: string;
-    studentId: string;
+    studentIds: string[];
     violationType: string;
     solution: string;
     notes: string;
   }>({
     date: new Date().toISOString().split('T')[0],
     className: CLASSES[0],
-    studentId: '',
+    studentIds: [],
     violationType: '',
     solution: '',
     notes: ''
@@ -136,40 +124,27 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   const [isHomeroomDownloadOpen, setIsHomeroomDownloadOpen] = useState(false);
   const homeroomDownloadRef = useRef<HTMLDivElement>(null);
 
-  // Dropdown UI States
+  // UI States
   const [isMonitoringDownloadOpen, setIsMonitoringDownloadOpen] = useState(false);
   const monitoringDownloadRef = useRef<HTMLDivElement>(null);
-
   const [isJournalDownloadOpen, setIsJournalDownloadOpen] = useState(false);
   const journalDownloadRef = useRef<HTMLDivElement>(null);
-
   const [isGradesDownloadOpen, setIsGradesDownloadOpen] = useState(false);
   const gradesDownloadRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdowns on click outside
+  // Close dropdowns
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-        if (monitoringDownloadRef.current && !monitoringDownloadRef.current.contains(event.target as Node)) {
-            setIsMonitoringDownloadOpen(false);
-        }
-        if (journalDownloadRef.current && !journalDownloadRef.current.contains(event.target as Node)) {
-            setIsJournalDownloadOpen(false);
-        }
-        if (gradesDownloadRef.current && !gradesDownloadRef.current.contains(event.target as Node)) {
-            setIsGradesDownloadOpen(false);
-        }
-        if (homeroomDownloadRef.current && !homeroomDownloadRef.current.contains(event.target as Node)) {
-            setIsHomeroomDownloadOpen(false);
-        }
+        if (monitoringDownloadRef.current && !monitoringDownloadRef.current.contains(event.target as Node)) setIsMonitoringDownloadOpen(false);
+        if (journalDownloadRef.current && !journalDownloadRef.current.contains(event.target as Node)) setIsJournalDownloadOpen(false);
+        if (gradesDownloadRef.current && !gradesDownloadRef.current.contains(event.target as Node)) setIsGradesDownloadOpen(false);
+        if (homeroomDownloadRef.current && !homeroomDownloadRef.current.contains(event.target as Node)) setIsHomeroomDownloadOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Derived Data
-  const teacherNames = useMemo(() => {
-    return Array.from(new Set(teacherData.map(t => t.name))).sort();
-  }, [teacherData]);
+  const teacherNames = useMemo(() => Array.from(new Set(teacherData.map(t => t.name))).sort(), [teacherData]);
 
   const mySubjects = useMemo(() => {
     if (!currentUser) return [];
@@ -178,79 +153,27 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   }, [teacherData, currentUser]);
 
   useEffect(() => {
-    if(mySubjects.length > 0 && !gradeSubject) {
-        setGradeSubject(mySubjects[0]);
-    }
+    if(mySubjects.length > 0 && !gradeSubject) setGradeSubject(mySubjects[0]);
   }, [mySubjects, gradeSubject]);
 
   const codeToDataMap = useMemo(() => {
     const map: Record<string, { subject: string, name: string }> = {};
-    teacherData.forEach(t => {
-      map[t.code] = { subject: t.subject, name: t.name };
-    });
+    teacherData.forEach(t => map[t.code] = { subject: t.subject, name: t.name });
     return map;
   }, [teacherData]);
 
-  // Generate Year Options (Current +/- 2 years)
-  const yearOptions = useMemo(() => {
-    const current = parseInt(appSettings.academicYear.split('/')[0]);
-    const start = current - 2;
-    const options = [];
-    for(let i = 0; i < 5; i++) {
-        const y = start + i;
-        options.push(`${y}/${y+1}`);
-    }
-    return options;
-  }, [appSettings.academicYear]);
-
-  // Forms
-  const [matForm, setMatForm] = useState<{
-    semester: '1' | '2';
-    classes: string[];
-    chapter: string;
-    subChapters: string[];
-    subject: string;
-  }>({
-    semester: '2', 
-    classes: [],
-    chapter: '',
-    subChapters: [''],
-    subject: ''
+  const [matForm, setMatForm] = useState<{semester: '1' | '2'; classes: string[]; chapter: string; subChapters: string[]; subject: string;}>({
+    semester: '2', classes: [], chapter: '', subChapters: [''], subject: ''
   });
 
-  const [jourForm, setJourForm] = useState<{
-    date: string;
-    semester: '1' | '2';
-    jamKe: string;
-    className: string;
-    subject: string;
-    chapter: string;
-    subChapter: string;
-    activity: string;
-    notes: string;
-    studentAttendance: Record<string, 'H' | 'S' | 'I' | 'A' | 'DL'>;
-  }>({
-    date: new Date().toISOString().split('T')[0],
-    semester: '2',
-    jamKe: '',
-    className: '',
-    subject: '',
-    chapter: '',
-    subChapter: '',
-    activity: '',
-    notes: '',
-    studentAttendance: {}
+  const [jourForm, setJourForm] = useState<{date: string; semester: '1' | '2'; jamKe: string; className: string; subject: string; chapter: string; subChapter: string; activity: string; notes: string; studentAttendance: Record<string, 'H' | 'S' | 'I' | 'A' | 'DL'>;}>({
+    date: new Date().toISOString().split('T')[0], semester: '2', jamKe: '', className: '', subject: '', chapter: '', subChapter: '', activity: '', notes: '', studentAttendance: {}
   });
 
-  // Auto-fill subject if only one
   useEffect(() => {
     if (mySubjects.length === 1) {
-       if (journalMode === 'INPUT_MATERI' && !matForm.subject) {
-          setMatForm(prev => ({ ...prev, subject: mySubjects[0] }));
-       }
-       if (journalMode === 'INPUT_JURNAL' && !jourForm.subject) {
-          setJourForm(prev => ({ ...prev, subject: mySubjects[0] }));
-       }
+       if (journalMode === 'INPUT_MATERI' && !matForm.subject) setMatForm(prev => ({ ...prev, subject: mySubjects[0] }));
+       if (journalMode === 'INPUT_JURNAL' && !jourForm.subject) setJourForm(prev => ({ ...prev, subject: mySubjects[0] }));
     }
   }, [journalMode, mySubjects, matForm.subject, jourForm.subject]);
 
@@ -260,45 +183,58 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
     return days[d.getDay()];
   };
 
-  // --- PDF & EXCEL GENERATORS ---
+  // Helper for adding signatures to PDF
+  const addSignatureToPDF = (doc: jsPDF, roleLabel: string = "Guru Mata Pelajaran") => {
+    const pageHeight = doc.internal.pageSize.height;
+    const pageWidth = doc.internal.pageSize.width;
+    let finalY = (doc as any).lastAutoTable.finalY + 10;
+    
+    // Check if enough space is available, else add page
+    if (finalY + 40 > pageHeight) { 
+        doc.addPage(); 
+        finalY = 20; 
+    }
+    
+    const rightMargin = pageWidth - 60;
+    const leftMargin = 20;
+
+    doc.setFontSize(10);
+    // Date
+    doc.text(`Mojokerto, ${new Date(printDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}`, rightMargin, finalY, { align: 'center' });
+    
+    // Titles
+    doc.text(`Mengetahui,`, leftMargin, finalY + 5);
+    doc.text(`Kepala Sekolah`, leftMargin, finalY + 10);
+    doc.text(roleLabel, rightMargin, finalY + 10, { align: 'center' });
+    
+    // Names
+    const currentTeacherData = teacherData.find(t => t.name === currentUser);
+    const teacherNIP = currentTeacherData?.nip || '-';
+    
+    doc.text(`${appSettings.headmaster || '...................'}`, leftMargin, finalY + 35);
+    doc.text(`NIP. ${appSettings.headmasterNip || '-' }`, leftMargin, finalY + 40);
+    
+    doc.text(`${currentUser}`, rightMargin, finalY + 35, { align: 'center' });
+    doc.text(`NIP. ${teacherNIP}`, rightMargin, finalY + 40, { align: 'center' });
+  };
 
   const downloadClassSchedulePDF = () => {
     const doc = new jsPDF('p', 'mm', 'a4');
-    doc.setFontSize(14);
-    doc.text(`Jadwal Pelajaran Kelas ${selectedClass}`, 14, 15);
-    doc.setFontSize(10);
-    doc.text(`SMPN 3 Pacet - Semester ${appSettings.semester} ${appSettings.academicYear}`, 14, 21);
-
+    doc.setFontSize(14); doc.text(`Jadwal Pelajaran Kelas ${selectedClass}`, 14, 15);
+    doc.setFontSize(10); doc.text(`SMPN 3 Pacet - Semester ${appSettings.semester} ${appSettings.academicYear}`, 14, 21);
     let finalY = 25;
-
     SCHEDULE_DATA.forEach(daySchedule => {
-      const rows = daySchedule.rows;
-      if (rows.length === 0) return;
+      if (daySchedule.rows.length === 0) return;
       if (finalY > 270) { doc.addPage(); finalY = 15; }
-      doc.setFontSize(11);
-      doc.setTextColor(79, 70, 229);
-      doc.text(`HARI: ${daySchedule.day}`, 14, finalY + 5);
-      
-      const tableBody = rows.map(row => {
-        if (row.activity) {
-            return [row.jam, row.waktu, { content: row.activity, colSpan: 3, styles: { fillColor: [255, 237, 213], halign: 'center', textColor: [154, 52, 18] } }];
-        }
+      doc.setFontSize(11); doc.setTextColor(79, 70, 229); doc.text(`HARI: ${daySchedule.day}`, 14, finalY + 5);
+      const tableBody = daySchedule.rows.map(row => {
+        if (row.activity) return [row.jam, row.waktu, { content: row.activity, colSpan: 3, styles: { fillColor: [255, 237, 213], halign: 'center', textColor: [154, 52, 18] } }];
         const key = `${daySchedule.day}-${row.jam}-${selectedClass}`;
         const code = scheduleMap[key];
         const info = code ? codeToDataMap[String(code)] : null;
         return [row.jam, row.waktu, code || '-', info?.subject || '-', info?.name || '-'];
       });
-
-      autoTable(doc, {
-        startY: finalY + 8,
-        head: [['Jam', 'Waktu', 'Kode', 'Mata Pelajaran', 'Guru']],
-        body: tableBody as any,
-        theme: 'grid',
-        headStyles: { fillColor: [79, 70, 229] },
-        styles: { fontSize: 8, cellPadding: 1.5 },
-        columnStyles: { 0: { cellWidth: 10, halign: 'center' }, 1: { cellWidth: 25, halign: 'center' }, 2: { cellWidth: 20, halign: 'center' }, 3: { cellWidth: 50 }, 4: { cellWidth: 'auto' } },
-        didParseCell: (data) => { if (data.section === 'body' && data.column.index === 2 && data.cell.raw !== '-') { data.cell.styles.fontStyle = 'bold'; } }
-      });
+      autoTable(doc, { startY: finalY + 8, head: [['Jam', 'Waktu', 'Kode', 'Mata Pelajaran', 'Guru']], body: tableBody as any, theme: 'grid', styles: { fontSize: 8, cellPadding: 1.5 }, columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 25 }, 2: { cellWidth: 20 }, 3: { cellWidth: 50 } } });
       finalY = (doc as any).lastAutoTable.finalY + 10;
     });
     doc.save(`Jadwal_Kelas_${selectedClass.replace(' ', '_')}.pdf`);
@@ -307,15 +243,10 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   const downloadTeacherSchedulePDF = () => {
     if (!selectedTeacherId) return;
     const doc = new jsPDF('p', 'mm', 'a4');
-    doc.setFontSize(14);
-    doc.text(`Jadwal Mengajar: ${selectedTeacherId}`, 14, 15);
-    doc.setFontSize(10);
-    doc.text(`SMPN 3 Pacet - Semester ${appSettings.semester} ${appSettings.academicYear}`, 14, 21);
-
-    let counter = 1;
-    const tableBody: any[] = [];
+    doc.setFontSize(14); doc.text(`Jadwal Mengajar: ${selectedTeacherId}`, 14, 15);
+    doc.setFontSize(10); doc.text(`SMPN 3 Pacet - Semester ${appSettings.semester} ${appSettings.academicYear}`, 14, 21);
+    let counter = 1; const tableBody: any[] = [];
     const myCodes = teacherData.filter(t => t.name === selectedTeacherId).map(t => t.code);
-
     SCHEDULE_DATA.forEach(day => {
        day.rows.forEach(row => {
           if (row.activity) return;
@@ -329,48 +260,10 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
           });
        });
     });
-
-    autoTable(doc, {
-        startY: 25,
-        head: [['No', 'Jam Ke', 'Waktu', 'Hari', 'Kelas', 'Kode', 'Mata Pelajaran']],
-        body: tableBody,
-        theme: 'grid',
-        headStyles: { fillColor: [5, 150, 105] },
-        styles: { fontSize: 9 },
-        columnStyles: { 0: { cellWidth: 10, halign: 'center' }, 1: { cellWidth: 15, halign: 'center' }, 2: { cellWidth: 25, halign: 'center' }, 3: { cellWidth: 25 }, 4: { cellWidth: 20, halign: 'center' } }
-    });
-
-    const pageHeight = doc.internal.pageSize.height;
-    const sigY = (doc as any).lastAutoTable.finalY + 20;
-    
-    if (sigY + 40 > pageHeight) doc.addPage();
-    
-    const finalSigY = sigY + 40 > pageHeight ? 20 : sigY;
-    
-    doc.setFontSize(10);
-    doc.text(`Mojokerto, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, 130, finalSigY);
-    
-    doc.text('Guru Mata Pelajaran', 20, finalSigY + 10);
-    doc.text('Kepala SMPN 3 Pacet', 130, finalSigY + 10);
-    
-    doc.text(selectedTeacherId, 20, finalSigY + 35);
-    doc.text(appSettings?.headmaster || '.........................', 130, finalSigY + 35);
-    
-    const teacherNip = teacherData.find(t => t.name === selectedTeacherId)?.nip || '................';
-    doc.text(`NIP. ${teacherNip}`, 20, finalSigY + 40);
-    doc.text(`NIP. ${appSettings?.headmasterNip || '................'}`, 130, finalSigY + 40);
-
+    autoTable(doc, { startY: 25, head: [['No', 'Jam Ke', 'Waktu', 'Hari', 'Kelas', 'Kode', 'Mata Pelajaran']], body: tableBody, theme: 'grid', styles: { fontSize: 9 } });
     doc.save(`Jadwal_Guru_${selectedTeacherId.replace(' ', '_')}.pdf`);
   };
 
-  const handleAttendanceChange = (key: string, status: AttendanceStatus) => {
-    setAttendanceData(prev => ({ ...prev, [key]: status }));
-  };
-  const resetAttendanceRow = (key: string) => {
-     setAttendanceData(prev => { const next = { ...prev }; delete next[key]; return next; });
-  };
-  
-  // --- JOURNAL LOGIC ---
   const myTeachingSlots = useMemo(() => {
     if (!currentUser || role !== 'TEACHER') return [];
     const myCodes = teacherData.filter(t => t.name === currentUser).map(t => t.code);
@@ -381,9 +274,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
         CLASSES.forEach(cls => {
           const key = `${day.day}-${row.jam}-${cls}`;
           const code = scheduleMap[key];
-          if (code && myCodes.includes(code)) {
-             slots.push(`${day.day}|${row.jam}|${cls}`);
-          }
+          if (code && myCodes.includes(code)) slots.push(`${day.day}|${row.jam}|${cls}`);
         });
       });
     });
@@ -391,43 +282,83 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   }, [currentUser, role, teacherData, scheduleMap]);
 
   const selectedDayName = useMemo(() => getDayNameFromDate(jourForm.date), [jourForm.date]);
-
-  const dailyTeachingSlots = useMemo(() => {
-     return myTeachingSlots.filter(slot => slot.startsWith(selectedDayName + '|'));
-  }, [myTeachingSlots, selectedDayName]);
+  const dailyTeachingSlots = useMemo(() => myTeachingSlots.filter(slot => slot.startsWith(selectedDayName + '|')), [myTeachingSlots, selectedDayName]);
 
   useEffect(() => {
     if (jourForm.jamKe) {
        const firstSlot = jourForm.jamKe.split(',')[0];
        const parts = firstSlot.split('|');
-       if (parts.length >= 3) {
-          setJourForm(prev => ({ ...prev, className: parts[2] }));
-       }
+       if (parts.length >= 3) setJourForm(prev => ({ ...prev, className: parts[2] }));
     }
   }, [jourForm.jamKe]);
 
   useEffect(() => {
+    // Populate attendance when class changes or students change
     if (jourForm.className && students.length > 0) {
-      const classStudents = students.filter(s => s.className === jourForm.className);
-      setJourForm(prev => {
-        const newAttendance = { ...prev.studentAttendance };
-        classStudents.forEach(s => {
-          if (!newAttendance[s.id]) newAttendance[s.id] = 'H';
-        });
-        return { ...prev, studentAttendance: newAttendance };
-      });
+      if (!editingJournalId) {
+          const classStudents = students.filter(s => s.className === jourForm.className);
+          // Only update if studentAttendance is empty to avoid overwriting user progress
+          setJourForm(prev => {
+              if (Object.keys(prev.studentAttendance).length === 0) {
+                  const newAttendance: any = {};
+                  classStudents.forEach(s => { newAttendance[s.id] = 'H'; });
+                  return { ...prev, studentAttendance: newAttendance };
+              }
+              return prev;
+          });
+      }
     }
+  }, [jourForm.className, students, editingJournalId]);
+
+  // When class changes manually, reset attendance
+  useEffect(() => {
+      if (!editingJournalId && jourForm.className) {
+          const classStudents = students.filter(s => s.className === jourForm.className);
+          const newAttendance: any = {};
+          classStudents.forEach(s => { newAttendance[s.id] = 'H'; });
+          setJourForm(prev => ({ ...prev, studentAttendance: newAttendance }));
+      }
   }, [jourForm.className, students]);
 
-  const handleMatClassToggle = (cls: string) => { setMatForm(prev => ({ ...prev, classes: prev.classes.includes(cls) ? prev.classes.filter(c => c !== cls) : [...prev.classes, cls] })); };
+
+  const handleMatClassToggle = (cls: string) => setMatForm(prev => ({ ...prev, classes: prev.classes.includes(cls) ? prev.classes.filter(c => c !== cls) : [...prev.classes, cls] }));
   const handleSubChapterChange = (index: number, val: string) => { const newSubs = [...matForm.subChapters]; newSubs[index] = val; setMatForm(prev => ({ ...prev, subChapters: newSubs })); };
   const addSubChapter = () => setMatForm(prev => ({ ...prev, subChapters: [...prev.subChapters, ''] }));
   const removeSubChapter = (index: number) => { if (matForm.subChapters.length === 1) return; setMatForm(prev => ({ ...prev, subChapters: prev.subChapters.filter((_, i) => i !== index) })); };
   
+  const handleEditMaterialClick = (material: TeachingMaterial) => {
+    setEditingMaterialId(material.id);
+    setMatForm({
+        semester: material.semester,
+        classes: material.classes,
+        chapter: material.chapter,
+        subChapters: material.subChapters.length > 0 ? material.subChapters : [''],
+        subject: material.subject || ''
+    });
+  };
+
   const saveMaterial = (e: React.FormEvent) => {
     e.preventDefault(); if (!currentUser || !onAddMaterial) return; if (matForm.classes.length === 0) { alert("Pilih minimal satu kelas!"); return; }
-    onAddMaterial({ id: Date.now().toString(), teacherName: currentUser, subject: matForm.subject, semester: matForm.semester, classes: matForm.classes, chapter: matForm.chapter, subChapters: matForm.subChapters.filter(s => s.trim() !== '') });
-    setMatForm({ semester: '2', classes: [], chapter: '', subChapters: [''], subject: matForm.subject }); alert("Materi berhasil ditambahkan!");
+    
+    const materialData: TeachingMaterial = { 
+        id: editingMaterialId || Date.now().toString(), 
+        teacherName: currentUser, 
+        subject: matForm.subject, 
+        semester: matForm.semester, 
+        classes: matForm.classes, 
+        chapter: matForm.chapter, 
+        subChapters: matForm.subChapters.filter(s => s.trim() !== '') 
+    };
+
+    if (editingMaterialId && onEditMaterial) {
+        onEditMaterial(materialData);
+        setEditingMaterialId(null);
+        alert("Materi berhasil diperbarui!");
+    } else {
+        onAddMaterial(materialData);
+        alert("Materi berhasil ditambahkan!");
+    }
+    setMatForm({ semester: '2', classes: [], chapter: '', subChapters: [''], subject: matForm.subject });
   };
 
   const availableChapters = useMemo(() => {
@@ -446,42 +377,41 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
 
   const handleEditJournalClick = (journal: TeachingJournal) => {
     setEditingJournalId(journal.id);
-    setJourForm({ date: journal.date, semester: journal.semester, jamKe: journal.jamKe, className: journal.className, subject: journal.subject || '', chapter: journal.chapter, subChapter: journal.subChapter, activity: journal.activity, notes: journal.notes, studentAttendance: journal.studentAttendance || {} });
+    setJourForm({ 
+        date: journal.date, 
+        semester: journal.semester, 
+        jamKe: journal.jamKe, 
+        className: journal.className, 
+        subject: journal.subject || '', 
+        chapter: journal.chapter, 
+        subChapter: journal.subChapter, 
+        activity: journal.activity, 
+        notes: journal.notes, 
+        studentAttendance: journal.studentAttendance || {} 
+    });
     setJournalMode('INPUT_JURNAL');
   };
 
   const handleCancelEdit = () => { setEditingJournalId(null); setJourForm({ date: new Date().toISOString().split('T')[0], semester: '2', jamKe: '', className: '', subject: jourForm.subject, chapter: '', subChapter: '', activity: '', notes: '', studentAttendance: {} }); setJournalMode('INPUT_JURNAL'); };
   const myJournals = useMemo(() => { let journals = teachingJournals.filter(j => j.teacherName === currentUser); if (journalFilterClass) { journals = journals.filter(j => j.className === journalFilterClass); } if (journalDateFrom) { journals = journals.filter(j => j.date >= journalDateFrom); } if (journalDateTo) { journals = journals.filter(j => j.date <= journalDateTo); } return journals.sort((a, b) => b.date.localeCompare(a.date)); }, [teachingJournals, currentUser, journalFilterClass, journalDateFrom, journalDateTo]);
-  const handleStudentAttendanceChange = (studentId: string, status: 'H' | 'S' | 'I' | 'A' | 'DL') => { setJourForm(prev => ({ ...prev, studentAttendance: { ...prev.studentAttendance, [studentId]: status } })); };
   
   const handleJamKeSelection = (slotVal: string) => {
       setJourForm(prev => {
           let currentSelected = prev.jamKe ? prev.jamKe.split(',') : [];
-          if (currentSelected.includes(slotVal)) {
-              currentSelected = currentSelected.filter(s => s !== slotVal);
-          } else {
+          if (currentSelected.includes(slotVal)) currentSelected = currentSelected.filter(s => s !== slotVal);
+          else {
               if (currentSelected.length > 0 && currentSelected[0]) {
                  const existingClass = currentSelected[0].split('|')[2];
-                 const newClass = slotVal.split('|')[2];
-                 if (existingClass !== newClass) {
-                    alert("Tidak dapat memilih jam mengajar dari kelas yang berbeda dalam satu jurnal.");
-                    return prev;
-                 }
+                 if (existingClass !== slotVal.split('|')[2]) { alert("Tidak dapat memilih jam mengajar dari kelas yang berbeda."); return prev; }
               }
               currentSelected.push(slotVal);
           }
-          
           let newSubject = prev.subject;
           if (currentSelected.length > 0) {
-             const firstSlot = currentSelected[0];
-             const parts = firstSlot.split('|');
+             const parts = currentSelected[0].split('|');
              if(parts.length >= 3) {
-                 const [day, jam, cls] = parts;
-                 const key = `${day}-${jam}-${cls}`;
-                 const code = scheduleMap[key];
-                 if (code && codeToDataMap[code]) {
-                    newSubject = codeToDataMap[code].subject;
-                 }
+                 const code = scheduleMap[`${parts[0]}-${parts[1]}-${parts[2]}`];
+                 if (code && codeToDataMap[code]) newSubject = codeToDataMap[code].subject;
              }
           }
           return { ...prev, jamKe: currentSelected.join(','), subject: newSubject };
@@ -491,1713 +421,931 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   const handleJournalSubChapterToggle = (sub: string) => { setJourForm(prev => { let current = prev.subChapter ? prev.subChapter.split(',') : []; current = current.map(s => s.trim()).filter(s => s !== ''); if (current.includes(sub)) current = current.filter(s => s !== sub); else current.push(sub); return { ...prev, subChapter: current.join(',') }; }); };
 
   const downloadJournalHistoryPDF = (format: 'a4' | 'f4') => {
-    // F4 size in mm is approx 215 x 330
-    const formatSize = format === 'a4' ? 'a4' : [330, 215]; // Width, Height in landscape
-    const doc = new jsPDF('l', 'mm', formatSize as any);
-    doc.setFontSize(14);
-    doc.text(`Riwayat Jurnal Mengajar - ${currentUser}`, 14, 15);
-    doc.setFontSize(10);
-    doc.text(`Semester ${jourForm.semester} Tahun Ajaran ${appSettings?.academicYear || ''}`, 14, 21);
-
+    const doc = new jsPDF('l', 'mm', format === 'a4' ? 'a4' : [330, 215] as any);
+    doc.setFontSize(14); doc.text(`Jurnal Mengajar Guru`, 14, 15);
+    doc.setFontSize(10); doc.text(`Nama Guru: ${currentUser}`, 14, 21);
+    doc.text(`Semester ${jourForm.semester} Tahun Ajaran ${appSettings?.academicYear || ''}`, 14, 26);
+    
+    // Updated Columns: No, Tanggal, Kelas, Mapel, Bab, Sub Bab, Kegiatan, Catatan, Absensi
     const tableBody = myJournals.map((j, idx) => {
+        // Format Absensi string: "Budi(S), Ani(I)"
         const absList: string[] = [];
         if (j.studentAttendance) {
-            Object.entries(j.studentAttendance).forEach(([sid, status]) => {
-                if (status !== 'H') {
+            Object.entries(j.studentAttendance).forEach(([sid, status]) => { 
+                if (status !== 'H') { 
                     const sName = students.find(s => s.id === sid)?.name || 'Siswa';
-                    absList.push(`${status}: ${sName}`);
+                    const shortName = sName.split(' ')[0]; // Use short name to save space 
+                    absList.push(`${shortName}(${status})`); 
                 }
             });
         }
-        const absString = absList.length > 0 ? absList.join(', ') : 'Nihil';
-
         return [
-            idx + 1,
-            j.date,
-            j.className,
-            j.jamKe ? j.jamKe.split(',').map(s => s.split('|')[1]).join(',') : '-',
-            j.subject || '-',
-            j.chapter,
-            j.subChapter,
-            j.activity,
-            j.notes || '-',
-            absString
+            idx + 1, 
+            j.date, 
+            j.className, 
+            j.subject || '-', 
+            j.chapter, 
+            j.subChapter, 
+            j.activity, 
+            j.notes || '-', 
+            absList.length > 0 ? absList.join(', ') : 'Nihil'
         ];
     });
 
-    autoTable(doc, {
-        startY: 25,
-        head: [['No', 'Tanggal', 'Kelas', 'Jam', 'Mapel', 'Bab', 'Sub Bab', 'Kegiatan', 'Catatan', 'Absensi']],
-        body: tableBody as any,
-        theme: 'grid',
-        headStyles: { fillColor: [79, 70, 229] },
-        styles: { fontSize: 8, cellPadding: 1 },
-        columnStyles: {
-            0: { cellWidth: 8 },
-            1: { cellWidth: 22 },
-            2: { cellWidth: 15 },
-            3: { cellWidth: 15 },
-            4: { cellWidth: 25 },
-            5: { cellWidth: 20 },
-            6: { cellWidth: 20 },
-            7: { cellWidth: 'auto' }, 
-            8: { cellWidth: 30 },
-            9: { cellWidth: 30 }
-        }
+    autoTable(doc, { 
+        startY: 30, 
+        head: [['No', 'Tanggal', 'Kelas', 'Mapel', 'Bab', 'Sub Bab', 'Kegiatan', 'Catatan', 'Absensi (S/I/A)']], 
+        body: tableBody as any, 
+        theme: 'grid', 
+        styles: { fontSize: 8 }, 
+        columnStyles: { 
+            0: { cellWidth: 8 }, 
+            1: { cellWidth: 20 }, 
+            2: { cellWidth: 15 }, 
+            3: { cellWidth: 25 },
+            7: { cellWidth: 25 }, // Catatan
+            8: { cellWidth: 35 } // Absensi
+        } 
     });
 
-    const pageHeight = doc.internal.pageSize.height;
-    let finalY = (doc as any).lastAutoTable.finalY + 10;
-    
-    if (finalY + 40 > pageHeight) {
-        doc.addPage();
-        finalY = 20;
-    }
+    addSignatureToPDF(doc, "Guru Mata Pelajaran");
 
-    const dateStr = new Date(printDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-    
-    doc.setFontSize(10);
-    // Right Side: Teacher Signature
-    doc.text(`Mojokerto, ${dateStr}`, 200, finalY);
-    doc.text('Guru Mata Pelajaran', 200, finalY + 5);
-    doc.text(currentUser || '....................', 200, finalY + 30);
-    
-    const myData = teacherData.find(t => t.name === currentUser);
-    if(myData && myData.nip) {
-        doc.text(`NIP. ${myData.nip}`, 200, finalY + 35);
-    } else {
-        doc.text(`NIP. -`, 200, finalY + 35);
-    }
-
-    // Left Side: Headmaster Signature
-    doc.text('Mengetahui,', 20, finalY);
-    doc.text('Kepala SMPN 3 Pacet', 20, finalY + 5);
-    doc.text(appSettings.headmaster || '.........................', 20, finalY + 30);
-    doc.text(`NIP. ${appSettings.headmasterNip || '................'}`, 20, finalY + 35);
-
-    doc.save(`Jurnal_Mengajar_${currentUser?.replace(' ', '_')}_${format.toUpperCase()}.pdf`);
-    setIsJournalDownloadOpen(false);
+    doc.save(`Jurnal_Mengajar_${currentUser?.replace(' ', '_')}.pdf`); setIsJournalDownloadOpen(false);
   };
 
-  const downloadJournalHistoryExcel = () => {
-    const data = myJournals.map((j, idx) => {
-        const absList: string[] = [];
-        if (j.studentAttendance) {
-            Object.entries(j.studentAttendance).forEach(([sid, status]) => {
-                if (status !== 'H') {
-                    const sName = students.find(s => s.id === sid)?.name || 'Siswa';
-                    absList.push(`${status}: ${sName}`);
-                }
-            });
-        }
-        const absString = absList.length > 0 ? absList.join(', ') : 'Nihil';
-        return {
-            'No': idx + 1,
-            'Tanggal': j.date,
-            'Kelas': j.className,
-            'Jam Ke': j.jamKe ? j.jamKe.split(',').map(s => s.split('|')[1]).join(',') : '-',
-            'Mata Pelajaran': j.subject || '-',
-            'Bab': j.chapter,
-            'Sub Bab': j.subChapter,
-            'Kegiatan': j.activity,
-            'Catatan': j.notes || '-',
-            'Absensi': absString
-        };
-    });
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Jurnal Mengajar");
-    ws['!cols'] = [
-        { wch: 5 }, { wch: 12 }, { wch: 8 }, { wch: 15 }, { wch: 25 },
-        { wch: 15 }, { wch: 15 }, { wch: 40 }, { wch: 25 }, { wch: 30 }
-    ];
-    XLSX.writeFile(wb, `Jurnal_Mengajar_${currentUser?.replace(' ', '_')}.xlsx`);
-    setIsJournalDownloadOpen(false);
-  };
-
-  // --- HOMEROOM HANDLERS ---
   const handleHomeroomSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!onAddHomeroomRecord || !onEditHomeroomRecord || !currentUser) return;
-
+    e.preventDefault(); if (!onAddHomeroomRecord || !onEditHomeroomRecord || !currentUser) return;
+    if (homeroomForm.studentIds.length === 0) { alert("Pilih minimal satu siswa!"); return; }
     if (editingHomeroomId) {
-        onEditHomeroomRecord({
-            id: editingHomeroomId,
-            teacherName: currentUser,
-            ...homeroomForm
-        });
+        onEditHomeroomRecord({ id: editingHomeroomId, teacherName: currentUser, date: homeroomForm.date, className: homeroomForm.className, studentId: homeroomForm.studentIds[0], violationType: homeroomForm.violationType, solution: homeroomForm.solution, notes: homeroomForm.notes });
         setEditingHomeroomId(null);
-        alert("Catatan berhasil diperbarui!");
     } else {
-        onAddHomeroomRecord({
-            id: Date.now().toString(),
-            teacherName: currentUser,
-            ...homeroomForm
-        });
-        alert("Catatan berhasil ditambahkan!");
+        homeroomForm.studentIds.forEach(studentId => { onAddHomeroomRecord({ id: Date.now().toString() + Math.random().toString(36).substring(2, 5), teacherName: currentUser, date: homeroomForm.date, className: homeroomForm.className, studentId: studentId, violationType: homeroomForm.violationType, solution: homeroomForm.solution, notes: homeroomForm.notes }); });
     }
-    setHomeroomForm({
-        date: new Date().toISOString().split('T')[0],
-        className: CLASSES[0],
-        studentId: '',
-        violationType: '',
-        solution: '',
-        notes: ''
-    });
+    setHomeroomForm({ date: new Date().toISOString().split('T')[0], className: CLASSES[0], studentIds: [], violationType: '', solution: '', notes: '' });
   };
 
   const handleEditHomeroomClick = (record: HomeroomRecord) => {
-    setEditingHomeroomId(record.id);
-    setHomeroomForm({
-        date: record.date,
-        className: record.className,
-        studentId: record.studentId,
-        violationType: record.violationType,
-        solution: record.solution,
-        notes: record.notes
-    });
+    setEditingHomeroomId(record.id); setHomeroomForm({ date: record.date, className: record.className, studentIds: [record.studentId], violationType: record.violationType, solution: record.solution, notes: record.notes });
   };
 
-  const downloadHomeroomPDF = (format: 'a4' | 'f4') => {
-    const formatSize = format === 'a4' ? 'a4' : [330, 215];
-    const doc = new jsPDF('l', 'mm', formatSize as any);
-    
-    doc.setFontSize(14);
-    doc.text(`Catatan Wali Kelas`, 14, 15);
-    doc.setFontSize(10);
-    doc.text(`Wali Kelas: ${currentUser}`, 14, 21);
-    doc.text(`Semester ${appSettings.semester} Tahun Ajaran ${appSettings.academicYear}`, 14, 26);
+  const toggleStudentSelection = (studentId: string) => setHomeroomForm(prev => ({ ...prev, studentIds: prev.studentIds.includes(studentId) ? prev.studentIds.filter(id => id !== studentId) : [...prev.studentIds, studentId] }));
+  const toggleSelectAllStudents = (studentsInClass: Student[]) => setHomeroomForm(prev => ({ ...prev, studentIds: studentsInClass.map(s => s.id).every(id => prev.studentIds.includes(id)) ? [] : studentsInClass.map(s => s.id) }));
 
-    const records = homeroomRecords.filter(r => r.teacherName === currentUser);
-    const tableBody = records.map((r, idx) => {
-        const student = students.find(s => s.id === r.studentId);
-        return [
-            idx + 1,
-            r.date,
-            r.className,
-            student ? student.name : '-',
-            r.violationType,
-            r.solution,
-            r.notes
-        ];
+  // --- ATTENDANCE RECAP LOGIC ---
+  const attendanceRecap = useMemo(() => {
+    const stats: Record<string, { S: number, I: number, A: number }> = {};
+    const classStudents = students.filter(s => s.className === monitoringClass);
+    
+    // Initialize stats for all students in class
+    classStudents.forEach(s => {
+        stats[s.id] = { S: 0, I: 0, A: 0 };
+    });
+
+    // Loop through journals to aggregate attendance
+    teachingJournals.forEach(j => {
+        // Must match selected class and semester
+        const journalSemester = j.semester === '1' ? 'Ganjil' : 'Genap';
+        if (j.className === monitoringClass && journalSemester === monitoringSemester) {
+            if (j.studentAttendance) {
+                Object.entries(j.studentAttendance).forEach(([sid, status]) => {
+                    // Only count if student belongs to this class
+                    if (stats[sid]) {
+                        if (status === 'S') stats[sid].S++;
+                        else if (status === 'I') stats[sid].I++;
+                        else if (status === 'A') stats[sid].A++;
+                    }
+                });
+            }
+        }
+    });
+    return stats;
+  }, [students, teachingJournals, monitoringClass, monitoringSemester]);
+
+  const downloadAttendanceRecapPDF = () => {
+    const doc = new jsPDF('p', 'mm', 'a4');
+    doc.setFontSize(14); doc.text(`Rekap Absensi Siswa - Kelas ${monitoringClass}`, 14, 15);
+    doc.setFontSize(10); doc.text(`Semester ${monitoringSemester} Tahun Ajaran ${appSettings.academicYear}`, 14, 21);
+    
+    const classStudents = students.filter(s => s.className === monitoringClass);
+    const tableBody = classStudents.map((s, idx) => {
+        const stats = attendanceRecap[s.id] || {S:0, I:0, A:0};
+        const total = stats.S + stats.I + stats.A;
+        return [idx + 1, s.name, stats.S, stats.I, stats.A, total];
     });
 
     autoTable(doc, {
         startY: 30,
-        head: [['No', 'Tanggal', 'Kelas', 'Nama Siswa', 'Jenis Pelanggaran', 'Solusi Penanganan', 'Keterangan']],
+        head: [['No', 'Nama Siswa', 'Sakit', 'Izin', 'Alpha', 'Total']],
         body: tableBody,
         theme: 'grid',
-        headStyles: { fillColor: [79, 70, 229] },
-        styles: { fontSize: 8, cellPadding: 1.5 },
+        headStyles: { fillColor: [79, 70, 229], halign: 'center' },
+        styles: { fontSize: 9, cellPadding: 1.5 },
         columnStyles: {
-            0: { cellWidth: 8 },
-            1: { cellWidth: 22 },
-            2: { cellWidth: 15 },
-            3: { cellWidth: 40 },
-            4: { cellWidth: 40 },
-            5: { cellWidth: 40 }
+            0: { cellWidth: 10, halign: 'center' },
+            1: { cellWidth: 80 },
+            2: { cellWidth: 20, halign: 'center' },
+            3: { cellWidth: 20, halign: 'center' },
+            4: { cellWidth: 20, halign: 'center' },
+            5: { cellWidth: 20, halign: 'center', fontStyle: 'bold' }
         }
     });
 
-    const pageHeight = doc.internal.pageSize.height;
-    let finalY = (doc as any).lastAutoTable.finalY + 10;
-    if (finalY + 40 > pageHeight) {
-        doc.addPage();
-        finalY = 20;
-    }
+    addSignatureToPDF(doc, "Guru Mata Pelajaran / Wali Kelas");
 
-    doc.setFontSize(10);
-    const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-    const pageWidth = doc.internal.pageSize.width;
-    
-    doc.text(`Mojokerto, ${dateStr}`, pageWidth - 50, finalY, { align: 'center' });
-    doc.text('Wali Kelas', pageWidth - 50, finalY + 5, { align: 'center' });
-    doc.text(currentUser || '....................', pageWidth - 50, finalY + 30, { align: 'center' });
-    
-    const myData = teacherData.find(t => t.name === currentUser);
-    doc.text(`NIP. ${myData?.nip || '-'}`, pageWidth - 50, finalY + 35, { align: 'center' });
-
-    doc.text('Mengetahui,', 40, finalY);
-    doc.text('Kepala SMPN 3 Pacet', 40, finalY + 5);
-    doc.text(appSettings.headmaster || '.........................', 40, finalY + 30);
-    doc.text(`NIP. ${appSettings.headmasterNip || '................'}`, 40, finalY + 35);
-
-    doc.save(`Catatan_Wali_Kelas_${currentUser}.pdf`);
-    setIsHomeroomDownloadOpen(false);
+    doc.save(`Rekap_Absensi_${monitoringClass.replace(' ', '_')}_${monitoringSemester}.pdf`);
+    setIsMonitoringDownloadOpen(false);
   };
 
-  const downloadHomeroomExcel = () => {
-    const records = homeroomRecords.filter(r => r.teacherName === currentUser);
-    const data = records.map((r, idx) => {
-        const student = students.find(s => s.id === r.studentId);
+  const downloadAttendanceRecapExcel = () => {
+    const classStudents = students.filter(s => s.className === monitoringClass);
+    const data = classStudents.map((s, idx) => {
+        const stats = attendanceRecap[s.id] || {S:0, I:0, A:0};
         return {
             'No': idx + 1,
-            'Tanggal': r.date,
-            'Kelas': r.className,
-            'Nama Siswa': student ? student.name : '-',
-            'Jenis Pelanggaran': r.violationType,
-            'Solusi Penanganan': r.solution,
-            'Keterangan': r.notes
+            'Nama Siswa': s.name,
+            'Sakit (S)': stats.S,
+            'Izin (I)': stats.I,
+            'Alpha (A)': stats.A,
+            'Total': stats.S + stats.I + stats.A
         };
     });
 
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Catatan Wali Kelas");
-    ws['!cols'] = [
-        { wch: 5 }, { wch: 15 }, { wch: 10 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }
-    ];
-    XLSX.writeFile(wb, `Catatan_Wali_Kelas_${currentUser}.xlsx`);
-    setIsHomeroomDownloadOpen(false);
-  };
-
-  const renderHomeroomTab = () => {
-    // Filter students based on selected class in form
-    const classStudents = students.filter(s => s.className === homeroomForm.className);
-    const myRecords = homeroomRecords.filter(r => r.teacherName === currentUser);
-
-    return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
-            {/* Input Form */}
-            <div className="lg:col-span-1 bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-fit">
-                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><PenTool size={18} /> {editingHomeroomId ? 'Edit Catatan' : 'Input Catatan'}</h3>
-                <form onSubmit={handleHomeroomSubmit} className="space-y-4">
-                    <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1">Tanggal</label>
-                        <input 
-                            type="date" 
-                            required
-                            value={homeroomForm.date}
-                            onChange={(e) => setHomeroomForm({...homeroomForm, date: e.target.value})}
-                            className="w-full border rounded px-3 py-2 text-sm"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1">Kelas</label>
-                        <select 
-                            value={homeroomForm.className}
-                            onChange={(e) => setHomeroomForm({...homeroomForm, className: e.target.value, studentId: ''})}
-                            className="w-full border rounded px-3 py-2 text-sm"
-                        >
-                            {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1">Nama Siswa</label>
-                        <select 
-                            value={homeroomForm.studentId}
-                            onChange={(e) => setHomeroomForm({...homeroomForm, studentId: e.target.value})}
-                            className="w-full border rounded px-3 py-2 text-sm"
-                            required
-                        >
-                            <option value="">-- Pilih Siswa --</option>
-                            {classStudents.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1">Jenis Pelanggaran / Masalah</label>
-                        <input 
-                            type="text" 
-                            required
-                            value={homeroomForm.violationType}
-                            onChange={(e) => setHomeroomForm({...homeroomForm, violationType: e.target.value})}
-                            placeholder="Contoh: Terlambat, Tidak Pakai Atribut"
-                            className="w-full border rounded px-3 py-2 text-sm"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1">Solusi Penanganan</label>
-                        <textarea 
-                            required
-                            value={homeroomForm.solution}
-                            onChange={(e) => setHomeroomForm({...homeroomForm, solution: e.target.value})}
-                            className="w-full border rounded px-3 py-2 text-sm h-20"
-                            placeholder="Tindakan yang diambil..."
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1">Keterangan</label>
-                        <textarea 
-                            value={homeroomForm.notes}
-                            onChange={(e) => setHomeroomForm({...homeroomForm, notes: e.target.value})}
-                            className="w-full border rounded px-3 py-2 text-sm h-16"
-                            placeholder="Catatan tambahan..."
-                        />
-                    </div>
-                    <div className="flex gap-2">
-                        {editingHomeroomId && (
-                            <button 
-                                type="button" 
-                                onClick={() => { setEditingHomeroomId(null); setHomeroomForm({...homeroomForm, studentId: '', violationType: '', solution: '', notes: ''}) }}
-                                className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg font-bold text-sm"
-                            >
-                                Batal
-                            </button>
-                        )}
-                        <button type="submit" className="flex-[2] py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 shadow-sm">
-                            {editingHomeroomId ? 'Simpan Perubahan' : 'Simpan Catatan'}
-                        </button>
-                    </div>
-                </form>
-            </div>
-
-            {/* List Table */}
-            <div className="lg:col-span-2 space-y-4">
-                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center">
-                    <h3 className="font-bold text-gray-800">Riwayat Catatan</h3>
-                    <div className="relative" ref={homeroomDownloadRef}>
-                        <button 
-                            onClick={() => setIsHomeroomDownloadOpen(!isHomeroomDownloadOpen)}
-                            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50 transition-colors"
-                        >
-                            <Download size={16} /> Download
-                            <ChevronDown size={14} className={`transition-transform duration-200 ${isHomeroomDownloadOpen ? 'rotate-180' : ''}`} />
-                        </button>
-                        {isHomeroomDownloadOpen && (
-                            <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20 animate-fade-in">
-                                <button onClick={() => downloadHomeroomPDF('a4')} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 border-b border-gray-100">
-                                    <FileText size={16} className="text-red-600"/> PDF (A4)
-                                </button>
-                                <button onClick={() => downloadHomeroomPDF('f4')} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 border-b border-gray-100">
-                                    <FileText size={16} className="text-red-600"/> PDF (F4/Folio)
-                                </button>
-                                <button onClick={downloadHomeroomExcel} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700">
-                                    <FileSpreadsheet size={16} className="text-green-600"/> Excel
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200 text-sm">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="px-4 py-3 text-left font-bold text-gray-600 w-24">Tanggal</th>
-                                    <th className="px-4 py-3 text-left font-bold text-gray-600 w-16">Kelas</th>
-                                    <th className="px-4 py-3 text-left font-bold text-gray-600">Nama Siswa</th>
-                                    <th className="px-4 py-3 text-left font-bold text-gray-600">Pelanggaran</th>
-                                    <th className="px-4 py-3 text-left font-bold text-gray-600">Solusi</th>
-                                    <th className="px-4 py-3 text-center font-bold text-gray-600 w-20">Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-200">
-                                {myRecords.length > 0 ? myRecords.map(r => {
-                                    const student = students.find(s => s.id === r.studentId);
-                                    return (
-                                        <tr key={r.id} className="hover:bg-gray-50">
-                                            <td className="px-4 py-3 whitespace-nowrap">{r.date}</td>
-                                            <td className="px-4 py-3 font-bold text-indigo-600">{r.className}</td>
-                                            <td className="px-4 py-3 font-medium">{student ? student.name : '-'}</td>
-                                            <td className="px-4 py-3 text-red-600">{r.violationType}</td>
-                                            <td className="px-4 py-3 text-gray-600 truncate max-w-xs">{r.solution}</td>
-                                            <td className="px-4 py-3 text-center flex justify-center gap-2">
-                                                <button onClick={() => handleEditHomeroomClick(r)} className="text-blue-500 hover:bg-blue-50 p-1 rounded"><Edit2 size={16}/></button>
-                                                <button onClick={() => onDeleteHomeroomRecord && onDeleteHomeroomRecord(r.id)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={16}/></button>
-                                            </td>
-                                        </tr>
-                                    );
-                                }) : (
-                                    <tr>
-                                        <td colSpan={6} className="px-4 py-8 text-center text-gray-400">Belum ada catatan wali kelas.</td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
+    XLSX.utils.book_append_sheet(wb, ws, "Rekap Absensi");
+    ws['!cols'] = [{wch:5}, {wch:30}, {wch:10}, {wch:10}, {wch:10}, {wch:10}];
+    XLSX.writeFile(wb, `Rekap_Absensi_${monitoringClass.replace(' ', '_')}.xlsx`);
+    setIsMonitoringDownloadOpen(false);
   };
 
   const renderAttendanceMonitoring = () => {
-    const classJournals = teachingJournals.filter(j => j.className === monitoringClass && j.teacherName === currentUser);
-    const classStudents = students.filter(s => s.className === monitoringClass);
-    
-    const studentStats = classStudents.map(student => {
-        let sakit = 0, izin = 0, alpha = 0, dl = 0, hadir = 0;
-        classJournals.forEach(j => {
-            const status = j.studentAttendance?.[student.id] || 'H';
-            if (status === 'S') sakit++;
-            else if (status === 'I') izin++;
-            else if (status === 'A') alpha++;
-            else if (status === 'DL') dl++;
-            else hadir++;
-        });
-        const total = sakit + izin + alpha + dl + hadir;
-        return { ...student, sakit, izin, alpha, dl, hadir, total };
-    });
-
-    const downloadMonitoring = () => {
-        const data = studentStats.map((s, i) => ({
-            'No': i + 1,
-            'Nama Siswa': s.name,
-            'Kelas': s.className,
-            'Hadir': s.hadir,
-            'Sakit': s.sakit,
-            'Izin': s.izin,
-            'Alpha': s.alpha,
-            'Dispensasi': s.dl,
-            'Total': s.total,
-            'Persentase': s.total > 0 ? `${Math.round((s.hadir / s.total) * 100)}%` : '0%'
-        }));
-        const ws = XLSX.utils.json_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, `Rekap_Absensi_${monitoringClass}`);
-        ws['!cols'] = [{ wch: 5 }, { wch: 30 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 10 }];
-        XLSX.writeFile(wb, `Rekap_Absensi_Siswa_${monitoringClass}.xlsx`);
-        setIsMonitoringDownloadOpen(false);
-    };
+    const filteredStudents = students.filter(s => s.className === monitoringClass);
 
     return (
-        <div className="space-y-6 animate-fade-in mt-6 border-t pt-6">
-            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                <div className="flex justify-between items-center mb-6">
+      <div className="space-y-6 animate-fade-in">
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+             <div className="flex flex-col md:flex-row justify-between items-end gap-4 mb-6">
+                <div className="flex gap-4 items-end">
                     <div>
-                        <h3 className="text-lg font-bold text-gray-800">Rekapitulasi Kehadiran Siswa</h3>
-                        <p className="text-sm text-gray-500">Berdasarkan jurnal mengajar Anda di kelas {monitoringClass}.</p>
-                    </div>
-                    <div className="flex gap-2">
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Kelas</label>
                         <select 
-                            value={monitoringClass} 
+                            value={monitoringClass}
                             onChange={(e) => setMonitoringClass(e.target.value)}
-                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm font-bold text-gray-700 bg-white"
+                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
                         >
                             {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        <div className="relative" ref={monitoringDownloadRef}>
-                             <button 
-                                onClick={() => setIsMonitoringDownloadOpen(!isMonitoringDownloadOpen)}
-                                className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm shadow hover:bg-indigo-700 flex items-center gap-2"
-                             >
-                                <Download size={16} /> Download Rekap
-                             </button>
-                             {isMonitoringDownloadOpen && (
-                                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20 animate-fade-in">
-                                    <button onClick={downloadMonitoring} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700">
-                                        <FileSpreadsheet size={16} className="text-green-600"/> Excel
-                                    </button>
-                                </div>
-                             )}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200 text-sm">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th className="px-4 py-3 text-left font-bold text-gray-600 w-10">No</th>
-                                <th className="px-4 py-3 text-left font-bold text-gray-600">Nama Siswa</th>
-                                <th className="px-4 py-3 text-center font-bold text-gray-600">Hadir</th>
-                                <th className="px-4 py-3 text-center font-bold text-gray-600 text-blue-600">Sakit</th>
-                                <th className="px-4 py-3 text-center font-bold text-gray-600 text-orange-600">Izin</th>
-                                <th className="px-4 py-3 text-center font-bold text-gray-600 text-red-600">Alpha</th>
-                                <th className="px-4 py-3 text-center font-bold text-gray-600 text-purple-600">Disp</th>
-                                <th className="px-4 py-3 text-center font-bold text-gray-600">Total</th>
-                                <th className="px-4 py-3 text-center font-bold text-gray-600">%</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                            {studentStats.length > 0 ? studentStats.map((s, idx) => (
-                                <tr key={s.id} className="hover:bg-gray-50">
-                                    <td className="px-4 py-2 text-gray-500">{idx + 1}</td>
-                                    <td className="px-4 py-2 font-medium text-gray-800">{s.name}</td>
-                                    <td className="px-4 py-2 text-center font-bold text-gray-700">{s.hadir}</td>
-                                    <td className="px-4 py-2 text-center text-blue-600">{s.sakit}</td>
-                                    <td className="px-4 py-2 text-center text-orange-600">{s.izin}</td>
-                                    <td className="px-4 py-2 text-center text-red-600">{s.alpha}</td>
-                                    <td className="px-4 py-2 text-center text-purple-600">{s.dl}</td>
-                                    <td className="px-4 py-2 text-center font-bold">{s.total}</td>
-                                    <td className="px-4 py-2 text-center font-bold text-indigo-600">
-                                        {s.total > 0 ? Math.round((s.hadir / s.total) * 100) : 0}%
-                                    </td>
-                                </tr>
-                            )) : (
-                                <tr>
-                                    <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
-                                        Belum ada data siswa atau jurnal untuk kelas ini.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    );
-  };
-
-  const renderGradesTab = () => {
-    // Filter students by class
-    const classStudents = students.filter(s => s.className === gradeClass);
-
-    // Initial empty chapters
-    const emptyChapters = {
-        1: { formative: [null,null,null,null,null], summative: null, average: null },
-        2: { formative: [null,null,null,null,null], summative: null, average: null },
-        3: { formative: [null,null,null,null,null], summative: null, average: null },
-        4: { formative: [null,null,null,null,null], summative: null, average: null },
-        5: { formative: [null,null,null,null,null], summative: null, average: null }
-    };
-
-    // Handler for input changes
-    const handleGradeChange = (studentId: string, type: 'FORMATIVE' | 'SUMMATIVE' | 'STS' | 'SAS', bab: number, index: number = 0, value: string) => {
-        if (!onUpdateGrade || !currentUser) return;
-
-        const numValue = value === '' ? null : Number(value);
-        // UPDATED ID FORMAT TO INCLUDE YEAR AND SEMESTER
-        const recordId = `${studentId}_${gradeSubject}_${gradeYear}_${gradeSemester}`;
-        
-        let record = studentGrades?.find(r => r.id === recordId);
-        
-        if (!record) {
-            record = {
-                id: recordId,
-                studentId,
-                teacherName: currentUser,
-                subject: gradeSubject,
-                className: gradeClass,
-                semester: gradeSemester,
-                academicYear: gradeYear,
-                chapters: { ...emptyChapters } as any
-            };
-        }
-
-        // Deep copy needed for nested updates
-        const updatedRecord = JSON.parse(JSON.stringify(record));
-
-        if (type === 'FORMATIVE') {
-            if(!updatedRecord.chapters[bab].formative) updatedRecord.chapters[bab].formative = [null,null,null,null,null];
-            updatedRecord.chapters[bab].formative[index] = numValue;
-        } else if (type === 'SUMMATIVE') {
-            updatedRecord.chapters[bab].summative = numValue;
-        } else if (type === 'STS') {
-            updatedRecord.sts = numValue;
-        } else if (type === 'SAS') {
-            updatedRecord.sas = numValue;
-        }
-
-        // --- Recalculate RR BAB ---
-        if (type === 'FORMATIVE' || type === 'SUMMATIVE') {
-            const forms = updatedRecord.chapters[bab].formative || [];
-            const sum = updatedRecord.chapters[bab].summative;
-            
-            // Logic: Average of all filled values in that chapter
-            let total = 0;
-            let count = 0;
-            forms.forEach((v: number | null) => {
-                if (v !== null) { total += v; count++; }
-            });
-            if (sum !== null) { total += sum; count++; }
-
-            updatedRecord.chapters[bab].average = count > 0 ? parseFloat((total / count).toFixed(2)) : null;
-        }
-
-        // --- Recalculate Final Grade ---
-        let totalAvg = 0;
-        let avgCount = 0;
-        
-        // Sum of all RR BABs
-        for (let i = 1; i <= 5; i++) {
-            if (updatedRecord.chapters[i].average !== null) {
-                totalAvg += updatedRecord.chapters[i].average;
-                avgCount++;
-            }
-        }
-        
-        // Add STS and SAS if exist
-        if (updatedRecord.sts !== null && updatedRecord.sts !== undefined) {
-            totalAvg += updatedRecord.sts;
-            avgCount++;
-        }
-        if (updatedRecord.sas !== null && updatedRecord.sas !== undefined) {
-            totalAvg += updatedRecord.sas;
-            avgCount++;
-        }
-
-        updatedRecord.finalGrade = avgCount > 0 ? parseFloat((totalAvg / avgCount).toFixed(2)) : null;
-
-        onUpdateGrade(updatedRecord);
-    };
-
-    const downloadGradesPDF = (format: 'a4' | 'f4') => {
-        // F4 size in mm is approx 215 x 330
-        const formatSize = format === 'a4' ? 'a4' : [330, 215]; // Width, Height in landscape
-        const doc = new jsPDF('l', 'mm', formatSize as any);
-        
-        doc.setFontSize(14);
-        doc.text(`Daftar Nilai Siswa`, 14, 15);
-        doc.setFontSize(10);
-        doc.text(`Kelas: ${gradeClass} | Mapel: ${gradeSubject}`, 14, 21);
-        doc.text(`Semester ${gradeSemester} - TA ${gradeYear}`, 14, 26);
-
-        const tableBody = classStudents.map((student, idx) => {
-            const recordId = `${student.id}_${gradeSubject}_${gradeYear}_${gradeSemester}`;
-            const record = studentGrades?.find(r => r.id === recordId) || { chapters: emptyChapters as any, sts: null, sas: null, finalGrade: null };
-            
-            const row = [idx + 1, student.name];
-            
-            // Add chapters
-            [1, 2, 3, 4, 5].forEach(bab => {
-                const ch = record.chapters?.[bab] || { formative: [], summative: null, average: null };
-                const forms = ch.formative || [null,null,null,null,null];
-                forms.forEach((v: number|null) => row.push(v ?? ''));
-                row.push(ch.summative ?? '');
-                row.push(ch.average ?? '');
-            });
-
-            row.push(record.sts ?? '');
-            row.push(record.sas ?? '');
-            row.push(record.finalGrade ?? '');
-            
-            return row;
-        });
-
-        // Nested Headers
-        const head = [
-            [
-                { content: 'No', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
-                { content: 'Nama Siswa', rowSpan: 2, styles: { valign: 'middle', halign: 'center' } },
-                { content: 'BAB 1', colSpan: 7, styles: { halign: 'center', fillColor: [224, 231, 255], textColor: [55, 48, 163] } },
-                { content: 'BAB 2', colSpan: 7, styles: { halign: 'center', fillColor: [224, 231, 255], textColor: [55, 48, 163] } },
-                { content: 'BAB 3', colSpan: 7, styles: { halign: 'center', fillColor: [224, 231, 255], textColor: [55, 48, 163] } },
-                { content: 'BAB 4', colSpan: 7, styles: { halign: 'center', fillColor: [224, 231, 255], textColor: [55, 48, 163] } },
-                { content: 'BAB 5', colSpan: 7, styles: { halign: 'center', fillColor: [224, 231, 255], textColor: [55, 48, 163] } },
-                { content: 'STS', rowSpan: 2, styles: { valign: 'middle', halign: 'center', fillColor: [254, 249, 195], textColor: [133, 77, 14] } },
-                { content: 'SAS', rowSpan: 2, styles: { valign: 'middle', halign: 'center', fillColor: [254, 249, 195], textColor: [133, 77, 14] } },
-                { content: 'Nilai Akhir', rowSpan: 2, styles: { valign: 'middle', halign: 'center', fillColor: [220, 252, 231], textColor: [22, 101, 52] } },
-            ],
-            [
-                // Sub-headers generated 5 times
-                ...Array(5).fill(['F1', 'F2', 'F3', 'F4', 'F5', 'Sum', 'RR']).flat()
-            ]
-        ];
-
-        autoTable(doc, {
-            startY: 30,
-            head: head as any,
-            body: tableBody as any,
-            theme: 'grid',
-            styles: { fontSize: 6, cellPadding: 1, halign: 'center' }, // Smaller font for wide table
-            headStyles: { fillColor: [55, 65, 81], textColor: 255, lineWidth: 0.1 },
-            columnStyles: {
-                0: { cellWidth: 6 },
-                1: { cellWidth: 30, halign: 'left' }
-                // Other columns auto
-            }
-        });
-
-        const pageHeight = doc.internal.pageSize.height;
-        let finalY = (doc as any).lastAutoTable.finalY + 10;
-        if (finalY + 40 > pageHeight) {
-            doc.addPage();
-            finalY = 20;
-        }
-
-        doc.setFontSize(10);
-        const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-        const pageWidth = doc.internal.pageSize.width;
-        
-        // Signatures
-        doc.text(`Mojokerto, ${dateStr}`, pageWidth - 50, finalY, { align: 'center' });
-        doc.text('Guru Mata Pelajaran', pageWidth - 50, finalY + 5, { align: 'center' });
-        doc.text(currentUser || '....................', pageWidth - 50, finalY + 30, { align: 'center' });
-        
-        const myData = teacherData.find(t => t.name === currentUser);
-        doc.text(`NIP. ${myData?.nip || '-'}`, pageWidth - 50, finalY + 35, { align: 'center' });
-
-        doc.text('Mengetahui,', 40, finalY);
-        doc.text('Kepala SMPN 3 Pacet', 40, finalY + 5);
-        doc.text(appSettings.headmaster || '.........................', 40, finalY + 30);
-        doc.text(`NIP. ${appSettings.headmasterNip || '................'}`, 40, finalY + 35);
-
-        doc.save(`Nilai_${gradeClass}_${gradeSubject}_${format.toUpperCase()}.pdf`);
-        setIsGradesDownloadOpen(false);
-    };
-
-    const downloadGradesExcel = () => {
-        // Construct header rows manually for complex structure
-        const header1 = ['No', 'Nama Siswa'];
-        const header2 = ['', ''];
-        
-        [1, 2, 3, 4, 5].forEach(bab => {
-            header1.push(`BAB ${bab}`, '', '', '', '', '', '');
-            header2.push('F1', 'F2', 'F3', 'F4', 'F5', 'Sum', 'RR');
-        });
-        
-        header1.push('STS', 'SAS', 'Nilai Akhir');
-        header2.push('', '', '');
-
-        const dataRows = classStudents.map((student, idx) => {
-            const recordId = `${student.id}_${gradeSubject}_${gradeYear}_${gradeSemester}`;
-            const record = studentGrades?.find(r => r.id === recordId) || { chapters: emptyChapters as any, sts: null, sas: null, finalGrade: null };
-            
-            const row = [idx + 1, student.name];
-            
-            [1, 2, 3, 4, 5].forEach(bab => {
-                const ch = record.chapters?.[bab] || { formative: [], summative: null, average: null };
-                const forms = ch.formative || [null,null,null,null,null];
-                forms.forEach((v: number|null) => row.push(v ?? ''));
-                row.push(ch.summative ?? '');
-                row.push(ch.average ?? '');
-            });
-
-            row.push(record.sts ?? '');
-            row.push(record.sas ?? '');
-            row.push(record.finalGrade ?? '');
-            
-            return row;
-        });
-
-        const ws = XLSX.utils.aoa_to_sheet([
-            [`DAFTAR NILAI SISWA`],
-            [`Kelas: ${gradeClass}`, `Mapel: ${gradeSubject}`],
-            [`Semester: ${gradeSemester}`, `Tahun: ${gradeYear}`],
-            [], // Empty row
-            header1,
-            header2,
-            ...dataRows
-        ]);
-
-        // Merge cells for headers logic in SheetJS is verbose, skipping exact merges for simplicity 
-        // but adding data structure is key.
-        // We can however add some simple merges for the title
-        ws['!merges'] = [
-            { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }, // Title
-        ];
-
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Nilai Siswa");
-        XLSX.writeFile(wb, `Nilai_${gradeClass}_${gradeSubject}.xlsx`);
-        setIsGradesDownloadOpen(false);
-    };
-
-    return (
-        <div className="space-y-6 animate-fade-in mt-6">
-            {/* Filter Bar */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                    <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1">Tahun Ajaran</label>
-                        <select 
-                            value={gradeYear} 
-                            onChange={(e) => setGradeYear(e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-bold text-gray-700 bg-white"
-                        >
-                            {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
                         </select>
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-gray-600 mb-1">Semester</label>
                         <select 
-                            value={gradeSemester} 
-                            onChange={(e) => setGradeSemester(e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-bold text-gray-700 bg-white"
+                            value={monitoringSemester}
+                            onChange={(e) => setMonitoringSemester(e.target.value)}
+                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
                         >
                             <option value="Ganjil">Ganjil</option>
                             <option value="Genap">Genap</option>
                         </select>
                     </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1">Kelas</label>
-                        <select 
-                            value={gradeClass} 
-                            onChange={(e) => setGradeClass(e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-bold text-gray-700 bg-white"
-                        >
-                            {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1">Mata Pelajaran</label>
-                        <select 
-                            value={gradeSubject} 
-                            onChange={(e) => setGradeSubject(e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-bold text-gray-700 bg-white"
-                        >
-                            {mySubjects.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                    </div>
                 </div>
-                <div className="flex justify-between items-center mt-4 border-t pt-4">
-                    <p className="text-xs text-gray-500">Nilai tersimpan otomatis berdasarkan filter di atas.</p>
-                    <div className="relative" ref={gradesDownloadRef}>
-                        <button 
-                            onClick={() => setIsGradesDownloadOpen(!isGradesDownloadOpen)}
-                            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50 transition-colors"
-                        >
-                            <Download size={16} /> Download
-                            <ChevronDown size={14} className={`transition-transform duration-200 ${isGradesDownloadOpen ? 'rotate-180' : ''}`} />
-                        </button>
-                        {isGradesDownloadOpen && (
-                            <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20 animate-fade-in">
-                                <button onClick={() => downloadGradesPDF('a4')} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 border-b border-gray-100">
-                                    <FileText size={16} className="text-red-600"/> PDF (A4)
-                                </button>
-                                <button onClick={() => downloadGradesPDF('f4')} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 border-b border-gray-100">
-                                    <FileText size={16} className="text-red-600"/> PDF (F4/Folio)
-                                </button>
-                                <button onClick={downloadGradesExcel} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700">
-                                    <FileSpreadsheet size={16} className="text-green-600"/> Excel
-                                </button>
-                            </div>
+                <div className="relative" ref={monitoringDownloadRef}>
+                     <button onClick={() => setIsMonitoringDownloadOpen(!isMonitoringDownloadOpen)} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50">
+                        <Download size={16}/> Download Rekap <ChevronDown size={14}/>
+                     </button>
+                     {isMonitoringDownloadOpen && (
+                        <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20">
+                            <button onClick={downloadAttendanceRecapPDF} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF</button>
+                            <button onClick={downloadAttendanceRecapExcel} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Excel</button>
+                        </div>
+                     )}
+                </div>
+             </div>
+
+             <div className="overflow-x-auto border rounded-lg">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="px-4 py-3 text-left font-bold text-gray-600 w-12">No</th>
+                            <th className="px-4 py-3 text-left font-bold text-gray-600">Nama Siswa</th>
+                            <th className="px-4 py-3 text-center font-bold text-blue-600 w-24">Sakit (S)</th>
+                            <th className="px-4 py-3 text-center font-bold text-orange-600 w-24">Izin (I)</th>
+                            <th className="px-4 py-3 text-center font-bold text-red-600 w-24">Alpha (A)</th>
+                            <th className="px-4 py-3 text-center font-bold text-gray-800 w-24">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                        {filteredStudents.map((student, idx) => {
+                            const stats = attendanceRecap[student.id] || {S:0, I:0, A:0};
+                            const total = stats.S + stats.I + stats.A;
+                            return (
+                                <tr key={student.id} className="hover:bg-gray-50">
+                                    <td className="px-4 py-2 text-gray-500">{idx + 1}</td>
+                                    <td className="px-4 py-2 font-medium">{student.name}</td>
+                                    <td className="px-4 py-2 text-center text-blue-700 font-medium">{stats.S > 0 ? stats.S : '-'}</td>
+                                    <td className="px-4 py-2 text-center text-orange-700 font-medium">{stats.I > 0 ? stats.I : '-'}</td>
+                                    <td className="px-4 py-2 text-center text-red-700 font-bold">{stats.A > 0 ? stats.A : '-'}</td>
+                                    <td className="px-4 py-2 text-center font-bold">{total > 0 ? total : '-'}</td>
+                                </tr>
+                            );
+                        })}
+                        {filteredStudents.length === 0 && (
+                            <tr><td colSpan={6} className="text-center py-8 text-gray-400">Tidak ada siswa ditemukan di kelas ini.</td></tr>
                         )}
-                    </div>
+                    </tbody>
+                </table>
+             </div>
+             <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded text-xs text-blue-800">
+                <p><strong>Catatan:</strong> Data ini direkap secara otomatis dari input "Jurnal Mengajar" oleh guru mapel di kelas {monitoringClass} pada semester {monitoringSemester}.</p>
+             </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderGradesTab = () => {
+    const filteredStudents = useMemo(() => students.filter(s => s.className === gradeClass), [students, gradeClass]);
+    
+    // DOWNLOAD GRADES PDF
+    const downloadGradesPDF = (format: 'a4' | 'f4') => {
+        const doc = new jsPDF('l', 'mm', format === 'a4' ? 'a4' : [330, 215] as any);
+        doc.setFontSize(14); doc.text(`Rekap Nilai Siswa`, 14, 15);
+        doc.setFontSize(10); doc.text(`Kelas: ${gradeClass} | Mapel: ${gradeSubject}`, 14, 21);
+        doc.text(`Semester ${gradeSemester} Tahun Ajaran ${gradeYear}`, 14, 26);
+
+        const tableBody = filteredStudents.map((student, idx) => {
+            const recordId = `${student.id}_${gradeSubject}_${gradeSemester}`; 
+            const r = studentGrades.find(rec => rec.id === recordId);
+            return [
+                idx + 1,
+                student.name,
+                r?.chapters[1]?.avg || '',
+                r?.chapters[2]?.avg || '',
+                r?.chapters[3]?.avg || '',
+                r?.chapters[4]?.avg || '',
+                r?.chapters[5]?.avg || '',
+                r?.sts || '',
+                r?.sas || '',
+                r?.finalGrade || ''
+            ];
+        });
+
+        autoTable(doc, {
+            startY: 30,
+            head: [['No', 'Nama Siswa', 'Bab 1', 'Bab 2', 'Bab 3', 'Bab 4', 'Bab 5', 'STS', 'SAS', 'Akhir']],
+            body: tableBody,
+            theme: 'grid',
+            headStyles: { fillColor: [55, 65, 81], halign: 'center' },
+            styles: { fontSize: 9, cellPadding: 1.5, halign: 'center' },
+            columnStyles: { 
+                0: { cellWidth: 10 }, 
+                1: { cellWidth: 80, halign: 'left' } 
+            }
+        });
+
+        addSignatureToPDF(doc, "Guru Mata Pelajaran");
+        doc.save(`Nilai_${gradeClass}_${gradeSubject}.pdf`);
+        setIsGradesDownloadOpen(false);
+    };
+
+    // DOWNLOAD GRADES EXCEL
+    const downloadGradesExcel = () => {
+        const data = filteredStudents.map((student, idx) => {
+            const recordId = `${student.id}_${gradeSubject}_${gradeSemester}`; 
+            const r = studentGrades.find(rec => rec.id === recordId);
+            return {
+                'No': idx + 1,
+                'Nama Siswa': student.name,
+                'Bab 1 (RR)': r?.chapters[1]?.avg || 0,
+                'Bab 2 (RR)': r?.chapters[2]?.avg || 0,
+                'Bab 3 (RR)': r?.chapters[3]?.avg || 0,
+                'Bab 4 (RR)': r?.chapters[4]?.avg || 0,
+                'Bab 5 (RR)': r?.chapters[5]?.avg || 0,
+                'STS': r?.sts || 0,
+                'SAS': r?.sas || 0,
+                'Nilai Akhir': r?.finalGrade || 0
+            };
+        });
+
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Rekap Nilai");
+        ws['!cols'] = [{wch:5}, {wch:35}, {wch:10}, {wch:10}, {wch:10}, {wch:10}, {wch:10}, {wch:8}, {wch:8}, {wch:10}];
+        XLSX.writeFile(wb, `Nilai_${gradeClass}_${gradeSubject}.xlsx`);
+        setIsGradesDownloadOpen(false);
+    };
+
+    const handleGradeChange = (studentId: string, field: string, value: string, chapterIdx?: number) => {
+        if (!onUpdateGrade) return;
+        const recordId = `${studentId}_${gradeSubject}_${gradeSemester}`;
+        const existingRecord = studentGrades.find(r => r.id === recordId) || { id: recordId, studentId, teacherName: currentUser, subject: gradeSubject, className: gradeClass, semester: gradeSemester, academicYear: gradeYear, chapters: { 1: {}, 2: {}, 3: {}, 4: {}, 5: {} } };
+        const numVal = parseFloat(value); const newRecord = { ...existingRecord };
+        if (chapterIdx) {
+            const chIdx = chapterIdx as 1|2|3|4|5; const ch = { ...newRecord.chapters[chIdx] } || {};
+            // @ts-ignore
+            ch[field] = isNaN(numVal) ? undefined : numVal;
+            const validScores = [ch.f1, ch.f2, ch.f3, ch.f4, ch.f5, ch.sum].filter(n => n !== undefined && n !== null && !isNaN(n));
+            const total = validScores.reduce((a, b) => (a as number) + (b as number), 0) as number;
+            ch.avg = validScores.length > 0 ? parseFloat((total / validScores.length).toFixed(2)) : undefined;
+            newRecord.chapters[chIdx] = ch;
+        } else { 
+            // @ts-ignore
+            (newRecord as any)[field] = isNaN(numVal) ? undefined : numVal; 
+        }
+        const chapterAvgs = Object.values(newRecord.chapters).map((c: ChapterGrade) => c.avg).filter(n => n !== undefined && n !== null) as number[];
+        const sts = newRecord.sts || 0; const sas = newRecord.sas || 0;
+        if (chapterAvgs.length > 0) { const avgRR = chapterAvgs.reduce((a, b) => a + b, 0) / chapterAvgs.length; newRecord.finalGrade = parseFloat(((avgRR + sts + sas) / 3).toFixed(2)); }
+        onUpdateGrade(newRecord);
+    };
+    const chapterColors = { 1: 'bg-blue-50', 2: 'bg-green-50', 3: 'bg-yellow-50', 4: 'bg-purple-50', 5: 'bg-pink-50' };
+    const chapterHeaderColors = { 1: 'bg-blue-100 text-blue-800', 2: 'bg-green-100 text-green-800', 3: 'bg-yellow-100 text-yellow-800', 4: 'bg-purple-100 text-purple-800', 5: 'bg-pink-100 text-pink-800' };
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between gap-4 items-end">
+                <div className="flex flex-wrap gap-4 items-end">
+                    <div><label className="block text-xs font-bold text-gray-600 mb-1">Mata Pelajaran</label><select value={gradeSubject} onChange={(e) => setGradeSubject(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm min-w-[200px]">{mySubjects.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                    <div><label className="block text-xs font-bold text-gray-600 mb-1">Kelas</label><select value={gradeClass} onChange={(e) => setGradeClass(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm w-24">{CLASSES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                    <div><label className="block text-xs font-bold text-gray-600 mb-1">Semester</label><select value={gradeSemester} onChange={(e) => setGradeSemester(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm w-24"><option value="Ganjil">Ganjil</option><option value="Genap">Genap</option></select></div>
                 </div>
-            </div>
-
-            {/* Complex Table */}
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
-                <div className="overflow-x-auto custom-scrollbar pb-2">
-                    <table className="min-w-max divide-y divide-gray-200 text-xs border-collapse">
-                        <thead className="bg-gray-100 text-gray-600">
-                            {/* Row 1 Headers */}
-                            <tr>
-                                <th rowSpan={2} className="px-2 py-2 border border-gray-300 text-center w-8 bg-gray-50 sticky left-0 z-20">NO</th>
-                                <th rowSpan={2} className="px-2 py-2 border border-gray-300 text-center w-24 bg-gray-50 sticky left-8 z-20">TAHUN AJARAN</th>
-                                <th rowSpan={2} className="px-2 py-2 border border-gray-300 text-center w-16 bg-gray-50 sticky left-32 z-20">SMT</th>
-                                <th rowSpan={2} className="px-4 py-2 border border-gray-300 text-left w-64 bg-gray-50 sticky left-48 z-20">NAMA SISWA</th>
-                                <th rowSpan={2} className="px-2 py-2 border border-gray-300 text-center w-16 bg-gray-50 sticky left-[28rem] z-20">KELAS</th>
-                                
-                                {[1, 2, 3, 4, 5].map(bab => (
-                                    <th key={bab} colSpan={7} className="px-2 py-1 border border-gray-300 text-center font-bold bg-indigo-50 text-indigo-800">
-                                        BAB {bab}
-                                    </th>
-                                ))}
-                                
-                                <th rowSpan={2} className="px-2 py-2 border border-gray-300 text-center w-12 bg-yellow-50 text-yellow-800 font-bold">STS</th>
-                                <th rowSpan={2} className="px-2 py-2 border border-gray-300 text-center w-12 bg-yellow-50 text-yellow-800 font-bold">SAS</th>
-                                <th rowSpan={2} className="px-2 py-2 border border-gray-300 text-center w-14 bg-green-50 text-green-800 font-bold">NILAI AKHIR</th>
-                            </tr>
-                            {/* Row 2 Headers */}
-                            <tr>
-                                {/* Repeated for each chapter */}
-                                {[1, 2, 3, 4, 5].map(bab => (
-                                    <React.Fragment key={bab}>
-                                        <th className="px-1 py-1 border border-gray-300 text-center w-10">FOR 1</th>
-                                        <th className="px-1 py-1 border border-gray-300 text-center w-10">FOR 2</th>
-                                        <th className="px-1 py-1 border border-gray-300 text-center w-10">FOR 3</th>
-                                        <th className="px-1 py-1 border border-gray-300 text-center w-10">FOR 4</th>
-                                        <th className="px-1 py-1 border border-gray-300 text-center w-10">FOR 5</th>
-                                        <th className="px-1 py-1 border border-gray-300 text-center w-10 bg-indigo-50 font-bold">SUM {bab}</th>
-                                        <th className="px-1 py-1 border border-gray-300 text-center w-10 bg-blue-50 font-bold">RR BAB {bab}</th>
-                                    </React.Fragment>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200 bg-white">
-                            {classStudents.map((student, idx) => {
-                                const recordId = `${student.id}_${gradeSubject}_${gradeYear}_${gradeSemester}`;
-                                const record = studentGrades?.find(r => r.id === recordId) || {
-                                    chapters: emptyChapters as any
-                                };
-
-                                return (
-                                    <tr key={student.id} className="hover:bg-gray-50">
-                                        <td className="px-2 py-1 border border-gray-200 text-center sticky left-0 bg-white z-10">{idx + 1}</td>
-                                        <td className="px-2 py-1 border border-gray-200 text-center sticky left-8 bg-white z-10">{gradeYear}</td>
-                                        <td className="px-2 py-1 border border-gray-200 text-center sticky left-32 bg-white z-10">{gradeSemester}</td>
-                                        <td className="px-4 py-1 border border-gray-200 font-medium sticky left-48 bg-white z-10 truncate max-w-[200px]">{student.name}</td>
-                                        <td className="px-2 py-1 border border-gray-200 text-center sticky left-[28rem] bg-white z-10">{student.className}</td>
-
-                                        {[1, 2, 3, 4, 5].map(bab => {
-                                            const ch = record.chapters?.[bab] || { formative: [], summative: null, average: null };
-                                            const formatifs = ch.formative || [null,null,null,null,null];
-                                            return (
-                                                <React.Fragment key={bab}>
-                                                    {[0, 1, 2, 3, 4].map(fIdx => (
-                                                        <td key={fIdx} className="p-0 border border-gray-200">
-                                                            <input 
-                                                                type="number" 
-                                                                min="0" max="100"
-                                                                className="w-full h-8 text-center text-xs focus:ring-1 focus:ring-indigo-500 outline-none"
-                                                                value={formatifs[fIdx] ?? ''}
-                                                                onChange={(e) => handleGradeChange(student.id, 'FORMATIVE', bab, fIdx, e.target.value)}
-                                                            />
-                                                        </td>
-                                                    ))}
-                                                    <td className="p-0 border border-gray-200 bg-indigo-50">
-                                                        <input 
-                                                            type="number" 
-                                                            min="0" max="100"
-                                                            className="w-full h-8 text-center text-xs bg-indigo-50 font-bold text-indigo-700 focus:ring-1 focus:ring-indigo-500 outline-none"
-                                                            value={ch.summative ?? ''}
-                                                            onChange={(e) => handleGradeChange(student.id, 'SUMMATIVE', bab, 0, e.target.value)}
-                                                        />
-                                                    </td>
-                                                    <td className="px-1 py-1 border border-gray-200 text-center bg-blue-50 font-bold text-blue-700">
-                                                        {ch.average ?? '-'}
-                                                    </td>
-                                                </React.Fragment>
-                                            );
-                                        })}
-
-                                        <td className="p-0 border border-gray-200 bg-yellow-50">
-                                            <input 
-                                                type="number" 
-                                                min="0" max="100"
-                                                className="w-full h-8 text-center text-xs bg-yellow-50 font-bold text-yellow-800 focus:ring-1 focus:ring-yellow-500 outline-none"
-                                                value={record.sts ?? ''}
-                                                onChange={(e) => handleGradeChange(student.id, 'STS', 0, 0, e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="p-0 border border-gray-200 bg-yellow-50">
-                                            <input 
-                                                type="number" 
-                                                min="0" max="100"
-                                                className="w-full h-8 text-center text-xs bg-yellow-50 font-bold text-yellow-800 focus:ring-1 focus:ring-yellow-500 outline-none"
-                                                value={record.sas ?? ''}
-                                                onChange={(e) => handleGradeChange(student.id, 'SAS', 0, 0, e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="px-1 py-1 border border-gray-200 text-center bg-green-50 font-bold text-green-700 text-sm">
-                                            {record.finalGrade ?? '-'}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+                <div className="relative" ref={gradesDownloadRef}>
+                     <button onClick={() => setIsGradesDownloadOpen(!isGradesDownloadOpen)} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50">
+                        <Download size={16}/> Download Rekap <ChevronDown size={14}/>
+                     </button>
+                     {isGradesDownloadOpen && (
+                        <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20">
+                            <button onClick={() => downloadGradesPDF('a4')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF (A4)</button>
+                            <button onClick={() => downloadGradesPDF('f4')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF (F4)</button>
+                            <button onClick={downloadGradesExcel} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Excel</button>
+                        </div>
+                     )}
                 </div>
-            </div>
+             </div>
+             <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-xs">
+                    <thead className="bg-slate-800 text-white">
+                        <tr>
+                            <th rowSpan={2} className="px-2 py-2 w-8 text-center border-r border-slate-600 bg-slate-800 sticky left-0 z-20">No</th>
+                            <th rowSpan={2} className="px-2 py-2 w-48 text-left border-r border-slate-600 bg-slate-800 sticky left-8 z-20">Nama Siswa</th>
+                            {[1,2,3,4,5].map(i => (<th key={i} colSpan={7} className={`px-1 py-1 text-center border-r border-slate-600 ${chapterHeaderColors[i as 1|2|3|4|5]}`}>BAB {i}</th>))}
+                            <th rowSpan={2} className="px-2 py-2 w-12 text-center border-r border-slate-600 bg-orange-700">STS</th>
+                            <th rowSpan={2} className="px-2 py-2 w-12 text-center border-r border-slate-600 bg-orange-800">SAS</th>
+                            <th rowSpan={2} className="px-2 py-2 w-16 text-center font-bold bg-slate-900">Nilai Akhir</th>
+                        </tr>
+                        <tr>{[1,2,3,4,5].map(i => (<React.Fragment key={i}><th className="px-1 py-1 w-10 text-center border-r border-slate-600 bg-slate-700 text-[10px]">F1</th><th className="px-1 py-1 w-10 text-center border-r border-slate-600 bg-slate-700 text-[10px]">F2</th><th className="px-1 py-1 w-10 text-center border-r border-slate-600 bg-slate-700 text-[10px]">F3</th><th className="px-1 py-1 w-10 text-center border-r border-slate-600 bg-slate-700 text-[10px]">F4</th><th className="px-1 py-1 w-10 text-center border-r border-slate-600 bg-slate-700 text-[10px]">F5</th><th className="px-1 py-1 w-10 text-center border-r border-slate-600 bg-slate-600 font-bold text-[10px]">SUM</th><th className="px-1 py-1 w-10 text-center border-r border-slate-600 bg-slate-900 font-bold text-yellow-300 text-[10px]">RR</th></React.Fragment>))}</tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                        {filteredStudents.map((student, idx) => {
+                            const recordId = `${student.id}_${gradeSubject}_${gradeSemester}`; const record = studentGrades.find(r => r.id === recordId);
+                            return (
+                                <tr key={student.id} className="hover:bg-gray-50">
+                                    <td className="px-2 py-2 text-center text-gray-500 bg-white sticky left-0 z-10 border-r">{idx + 1}</td>
+                                    <td className="px-2 py-2 font-medium truncate max-w-[200px] bg-white sticky left-8 z-10 border-r" title={student.name}>{student.name}</td>
+                                    {[1,2,3,4,5].map(chIdx => {
+                                        const chData = record?.chapters[chIdx as 1|2|3|4|5];
+                                        return (
+                                            <React.Fragment key={chIdx}>
+                                                {['f1', 'f2', 'f3', 'f4', 'f5'].map(field => (<td key={field} className="p-1 border-r"><input type="number" className="w-8 text-center border-none bg-transparent focus:bg-indigo-50 rounded text-[10px] p-0.5" value={(chData as any)?.[field] ?? ''} onChange={(e) => handleGradeChange(student.id, field, e.target.value, chIdx)} /></td>))}
+                                                <td className={`p-1 border-r ${chapterColors[chIdx as 1|2|3|4|5]}`}><input type="number" className="w-8 text-center border-none bg-transparent font-semibold text-[10px] p-0.5" value={chData?.sum ?? ''} onChange={(e) => handleGradeChange(student.id, 'sum', e.target.value, chIdx)} /></td>
+                                                <td className="p-1 border-r bg-gray-100"><input type="number" className="w-8 text-center border-none bg-transparent font-bold text-gray-800 text-[10px] p-0.5" value={chData?.avg ?? ''} readOnly tabIndex={-1} /></td>
+                                            </React.Fragment>
+                                        )
+                                    })}
+                                    <td className="p-1 border-r bg-orange-50"><input type="number" className="w-full text-center border-none bg-transparent rounded text-xs p-1" value={record?.sts ?? ''} onChange={(e) => handleGradeChange(student.id, 'sts', e.target.value)} /></td>
+                                    <td className="p-1 border-r bg-orange-50"><input type="number" className="w-full text-center border-none bg-transparent rounded text-xs p-1" value={record?.sas ?? ''} onChange={(e) => handleGradeChange(student.id, 'sas', e.target.value)} /></td>
+                                    <td className="p-1 bg-slate-100 font-bold text-center border-l-2 border-slate-300"><input type="number" className="w-full text-center border-none bg-transparent font-bold text-indigo-700 text-xs p-1" value={record?.finalGrade ?? ''} readOnly /></td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+             </div>
         </div>
     );
   };
 
-  const renderJournalTab = () => (
-    <div className="space-y-6 animate-fade-in">
-       {/* Sub-Tabs for Journal */}
-       <div className="flex gap-0 border-b border-gray-200 overflow-x-auto">
-          <button 
-             onClick={() => setJournalMode('INPUT_JURNAL')}
-             className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${journalMode === 'INPUT_JURNAL' ? 'border-indigo-600 text-indigo-600 bg-indigo-50' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-          >
-             <PenTool size={18} /> Input Jurnal
-          </button>
-          <button 
-             onClick={() => setJournalMode('INPUT_MATERI')}
-             className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${journalMode === 'INPUT_MATERI' ? 'border-indigo-600 text-indigo-600 bg-indigo-50' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-          >
-             <BookOpen size={18} /> Input Materi
-          </button>
-       </div>
+  const renderHomeroomTab = () => {
+    const studentsInClass = useMemo(() => students.filter(s => s.className === homeroomForm.className), [students, homeroomForm.className]);
+    const myHomeroomRecords = useMemo(() => homeroomRecords.filter(r => r.teacherName === currentUser).sort((a,b) => b.date.localeCompare(a.date)), [homeroomRecords, currentUser]);
 
-       {journalMode === 'INPUT_MATERI' && (
-          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-             <h3 className="font-bold text-gray-800 mb-4">Tambah Materi Ajar</h3>
-             <form onSubmit={saveMaterial} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                   <div>
-                      <label className="block text-xs font-bold text-gray-600 mb-1">Mata Pelajaran</label>
-                      <select 
-                        value={matForm.subject} 
-                        onChange={e => setMatForm({...matForm, subject: e.target.value})} 
-                        className="w-full border rounded px-3 py-2 text-sm"
-                        required
-                      >
-                         <option value="">-- Pilih Mapel --</option>
-                         {mySubjects.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                   </div>
-                   <div>
-                      <label className="block text-xs font-bold text-gray-600 mb-1">Semester</label>
-                      <select value={matForm.semester} onChange={e => setMatForm({...matForm, semester: e.target.value as any})} className="w-full border rounded px-3 py-2 text-sm">
-                         <option value="1">Ganjil</option>
-                         <option value="2">Genap</option>
-                      </select>
-                   </div>
-                   <div>
-                      <label className="block text-xs font-bold text-gray-600 mb-1">Bab (Materi Pokok)</label>
-                      <input type="text" value={matForm.chapter} onChange={e => setMatForm({...matForm, chapter: e.target.value})} className="w-full border rounded px-3 py-2 text-sm" placeholder="Contoh: Bab 1" required />
-                   </div>
-                </div>
-                <div>
-                   <label className="block text-xs font-bold text-gray-600 mb-1">Kelas Target</label>
-                   <div className="flex flex-wrap gap-2">
-                      {CLASSES.map(c => (
-                         <label key={c} className={`px-3 py-1.5 rounded text-xs cursor-pointer border select-none transition-colors ${matForm.classes.includes(c) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'}`}>
-                            <input type="checkbox" className="hidden" checked={matForm.classes.includes(c)} onChange={() => handleMatClassToggle(c)} />
-                            {c}
-                         </label>
+    // DOWNLOAD HOMEROOM PDF
+    const downloadHomeroomPDF = (format: 'a4' | 'f4') => {
+        const doc = new jsPDF('l', 'mm', format === 'a4' ? 'a4' : [330, 215] as any);
+        doc.setFontSize(14); doc.text(`Riwayat Catatan Wali Kelas`, 14, 15);
+        doc.setFontSize(10); doc.text(`Wali Kelas: ${currentUser}`, 14, 21);
+        doc.text(`Tahun Ajaran ${appSettings.academicYear}`, 14, 26);
+
+        const tableBody = myHomeroomRecords.map((rec, idx) => {
+            const sName = students.find(s => s.id === rec.studentId)?.name || 'Siswa Hapus';
+            return [
+                idx + 1,
+                rec.date,
+                rec.className,
+                sName,
+                rec.violationType,
+                rec.solution
+            ];
+        });
+
+        autoTable(doc, {
+            startY: 30,
+            head: [['No', 'Tanggal', 'Kelas', 'Nama Siswa', 'Masalah / Pelanggaran', 'Solusi / Tindak Lanjut']],
+            body: tableBody,
+            theme: 'grid',
+            headStyles: { fillColor: [79, 70, 229], halign: 'center' },
+            styles: { fontSize: 9, cellPadding: 1.5 },
+            columnStyles: { 
+                0: { cellWidth: 10, halign: 'center' },
+                1: { cellWidth: 25 },
+                2: { cellWidth: 15, halign: 'center' },
+                3: { cellWidth: 50 }
+            }
+        });
+
+        addSignatureToPDF(doc, "Wali Kelas");
+        doc.save(`Catatan_Wali_Kelas_${currentUser.replace(' ', '_')}.pdf`);
+        setIsHomeroomDownloadOpen(false);
+    };
+
+    // DOWNLOAD HOMEROOM EXCEL
+    const downloadHomeroomExcel = () => {
+        const data = myHomeroomRecords.map((rec, idx) => {
+            const sName = students.find(s => s.id === rec.studentId)?.name || 'Siswa Hapus';
+            return {
+                'No': idx + 1,
+                'Tanggal': rec.date,
+                'Kelas': rec.className,
+                'Nama Siswa': sName,
+                'Masalah': rec.violationType,
+                'Solusi': rec.solution,
+                'Catatan': rec.notes
+            };
+        });
+
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Catatan Wali Kelas");
+        ws['!cols'] = [{wch:5}, {wch:15}, {wch:10}, {wch:30}, {wch:30}, {wch:30}, {wch:30}];
+        XLSX.writeFile(wb, `Catatan_Wali_Kelas_${currentUser.replace(' ', '_')}.xlsx`);
+        setIsHomeroomDownloadOpen(false);
+    };
+
+    return (
+      <div className="space-y-6 animate-fade-in">
+         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1 bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-fit">
+               <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <ClipboardList size={20} className="text-indigo-600"/> {editingHomeroomId ? 'Edit Catatan' : 'Input Catatan Wali Kelas'}
+               </h3>
+               <form onSubmit={handleHomeroomSubmit} className="space-y-4">
+                  <div><label className="block text-xs font-bold text-gray-600 mb-1">Tanggal</label><input type="date" value={homeroomForm.date} onChange={(e) => setHomeroomForm({...homeroomForm, date: e.target.value})} className="w-full border rounded px-3 py-2 text-sm" required /></div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 mb-1">Kelas Binaan</label>
+                    <select value={homeroomForm.className} onChange={(e) => setHomeroomForm({...homeroomForm, className: e.target.value, studentIds: []})} className="w-full border rounded px-3 py-2 text-sm">
+                      {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div className="flex justify-between items-center mb-1"><label className="block text-xs font-bold text-gray-600">Siswa (Bisa pilih &gt; 1)</label><button type="button" onClick={() => toggleSelectAllStudents(studentsInClass)} className="text-[10px] text-indigo-600 hover:underline">{studentsInClass.length > 0 && homeroomForm.studentIds.length === studentsInClass.length ? 'Unselect All' : 'Select All'}</button></div>
+                    <div className="max-h-40 overflow-y-auto border rounded p-2 bg-gray-50 space-y-1">
+                      {studentsInClass.map(s => (
+                        <label key={s.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-1 rounded">
+                          <input type="checkbox" checked={homeroomForm.studentIds.includes(s.id)} onChange={() => toggleStudentSelection(s.id)} className="rounded text-indigo-600"/>
+                          <span className="text-xs text-gray-700">{s.name}</span>
+                        </label>
                       ))}
-                   </div>
-                </div>
-                <div>
-                   <label className="block text-xs font-bold text-gray-600 mb-1">Sub Bab</label>
-                   {matForm.subChapters.map((sub, idx) => (
-                      <div key={idx} className="flex gap-2 mb-2">
-                         <input type="text" value={sub} onChange={e => handleSubChapterChange(idx, e.target.value)} className="flex-1 border rounded px-3 py-2 text-sm" placeholder={`Sub Bab ${idx+1}`} />
-                         {matForm.subChapters.length > 1 && (
-                            <button type="button" onClick={() => removeSubChapter(idx)} className="p-2 text-red-500 hover:bg-red-50 rounded"><X size={16}/></button>
-                         )}
-                      </div>
-                   ))}
-                   <button type="button" onClick={addSubChapter} className="text-xs font-bold text-indigo-600 flex items-center gap-1 mt-1 hover:underline"><Plus size={14}/> Tambah Sub Bab</button>
-                </div>
-                <div className="flex justify-end pt-4">
-                   <button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold shadow hover:bg-indigo-700">Simpan Materi</button>
-                </div>
-             </form>
-
-             <div className="mt-8 border-t pt-6">
-                <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                   <List size={20} className="text-indigo-600"/> Daftar Materi Tersimpan
-                </h4>
-                <div className="overflow-x-auto border rounded-lg">
-                   <table className="min-w-full divide-y divide-gray-200 text-sm">
-                      <thead className="bg-gray-50">
-                         <tr>
-                            <th className="px-4 py-3 text-left font-bold text-gray-600 w-12">No</th>
-                            <th className="px-4 py-3 text-left font-bold text-gray-600">Mata Pelajaran</th>
-                            <th className="px-4 py-3 text-center font-bold text-gray-600 w-24">Smt</th>
-                            <th className="px-4 py-3 text-left font-bold text-gray-600">Kelas</th>
-                            <th className="px-4 py-3 text-left font-bold text-gray-600">Bab</th>
-                            <th className="px-4 py-3 text-left font-bold text-gray-600">Sub Bab</th>
-                            <th className="px-4 py-3 text-center font-bold text-gray-600 w-20">Aksi</th>
-                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                         {teachingMaterials.filter(m => m.teacherName === currentUser).length > 0 ? (
-                            teachingMaterials.filter(m => m.teacherName === currentUser).map((m, i) => (
-                               <tr key={m.id} className="hover:bg-gray-50">
-                                  <td className="px-4 py-3 text-gray-500">{i + 1}</td>
-                                  <td className="px-4 py-3 font-medium text-gray-900">{m.subject}</td>
-                                  <td className="px-4 py-3 text-center">{m.semester}</td>
-                                  <td className="px-4 py-3">
-                                     <div className="flex flex-wrap gap-1">
-                                        {m.classes.map(c => (
-                                           <span key={c} className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded border border-gray-200">{c}</span>
-                                        ))}
-                                     </div>
-                                  </td>
-                                  <td className="px-4 py-3 font-medium text-indigo-700">{m.chapter}</td>
-                                  <td className="px-4 py-3 text-xs text-gray-600">
-                                     <ul className="list-disc list-inside">
-                                        {m.subChapters.map((sub, idx) => <li key={idx}>{sub}</li>)}
-                                     </ul>
-                                  </td>
-                                  <td className="px-4 py-3 text-center">
-                                     {onDeleteMaterial && (
-                                        <button 
-                                           onClick={() => onDeleteMaterial(m.id)}
-                                           className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors"
-                                           title="Hapus Materi"
-                                        >
-                                           <Trash2 size={16} />
-                                        </button>
-                                     )}
-                                  </td>
+                      {studentsInClass.length === 0 && <p className="text-xs text-gray-400 text-center">Tidak ada siswa.</p>}
+                    </div>
+                  </div>
+                  <div><label className="block text-xs font-bold text-gray-600 mb-1">Jenis Pelanggaran / Masalah</label><input type="text" value={homeroomForm.violationType} onChange={(e) => setHomeroomForm({...homeroomForm, violationType: e.target.value})} className="w-full border rounded px-3 py-2 text-sm" placeholder="Contoh: Terlambat, Bolos..." required /></div>
+                  <div><label className="block text-xs font-bold text-gray-600 mb-1">Tindak Lanjut / Solusi</label><textarea value={homeroomForm.solution} onChange={(e) => setHomeroomForm({...homeroomForm, solution: e.target.value})} className="w-full border rounded px-3 py-2 text-sm" rows={2} placeholder="Solusi..." required /></div>
+                  <div><label className="block text-xs font-bold text-gray-600 mb-1">Catatan Tambahan</label><textarea value={homeroomForm.notes} onChange={(e) => setHomeroomForm({...homeroomForm, notes: e.target.value})} className="w-full border rounded px-3 py-2 text-sm" rows={2} /></div>
+                  
+                  <div className="flex gap-2 pt-2">
+                    {editingHomeroomId && <button type="button" onClick={() => { setEditingHomeroomId(null); setHomeroomForm({date: new Date().toISOString().split('T')[0], className: CLASSES[0], studentIds: [], violationType: '', solution: '', notes: ''}); }} className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg font-bold text-sm">Batal</button>}
+                    <button type="submit" className="flex-[2] py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 shadow-sm">{editingHomeroomId ? 'Update' : 'Simpan'}</button>
+                  </div>
+               </form>
+            </div>
+            
+            <div className="lg:col-span-2 space-y-4">
+               <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center">
+                  <h3 className="font-bold text-gray-800">Riwayat Catatan Wali Kelas</h3>
+                  <div className="relative" ref={homeroomDownloadRef}>
+                     <button onClick={() => setIsHomeroomDownloadOpen(!isHomeroomDownloadOpen)} className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50">
+                        <Download size={16}/> Download Rekap <ChevronDown size={14}/>
+                     </button>
+                     {isHomeroomDownloadOpen && (
+                        <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20">
+                            <button onClick={() => downloadHomeroomPDF('a4')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF (A4)</button>
+                            <button onClick={() => downloadHomeroomPDF('f4')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF (F4)</button>
+                            <button onClick={downloadHomeroomExcel} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Excel</button>
+                        </div>
+                     )}
+                  </div>
+               </div>
+               <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                     <table className="min-w-full divide-y divide-gray-200 text-xs">
+                        <thead className="bg-gray-50"><tr><th className="px-3 py-3 text-left font-bold text-gray-600 w-8">No</th><th className="px-3 py-3 text-left font-bold text-gray-600 w-20">Tanggal</th><th className="px-3 py-3 text-left font-bold text-gray-600 w-16">Kelas</th><th className="px-3 py-3 text-left font-bold text-gray-600">Nama Siswa</th><th className="px-3 py-3 text-left font-bold text-gray-600">Masalah</th><th className="px-3 py-3 text-left font-bold text-gray-600">Solusi</th><th className="px-3 py-3 text-center font-bold text-gray-600 w-16">Aksi</th></tr></thead>
+                        <tbody className="divide-y divide-gray-200">
+                           {myHomeroomRecords.map((rec, idx) => {
+                             const sName = students.find(s => s.id === rec.studentId)?.name || 'Siswa Hapus';
+                             return (
+                               <tr key={rec.id} className="hover:bg-gray-50">
+                                 <td className="px-3 py-2 text-center text-gray-500">{idx+1}</td>
+                                 <td className="px-3 py-2 whitespace-nowrap">{rec.date}</td>
+                                 <td className="px-3 py-2 font-bold text-indigo-600">{rec.className}</td>
+                                 <td className="px-3 py-2 font-medium">{sName}</td>
+                                 <td className="px-3 py-2 text-red-600 font-medium">{rec.violationType}</td>
+                                 <td className="px-3 py-2 text-gray-600">{rec.solution}</td>
+                                 <td className="px-3 py-2 text-center flex justify-center gap-1">
+                                    <button onClick={() => handleEditHomeroomClick(rec)} className="text-blue-500 hover:bg-blue-50 p-1 rounded"><Edit2 size={16}/></button>
+                                    <button onClick={() => onDeleteHomeroomRecord && onDeleteHomeroomRecord(rec.id)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={16}/></button>
+                                 </td>
                                </tr>
-                            ))
-                         ) : (
-                            <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400 italic">Belum ada materi.</td></tr>
-                         )}
-                      </tbody>
-                   </table>
-                </div>
-             </div>
-          </div>
-       )}
+                             )
+                           })}
+                           {myHomeroomRecords.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Belum ada catatan.</td></tr>}
+                        </tbody>
+                     </table>
+                  </div>
+               </div>
+            </div>
+         </div>
+      </div>
+    );
+  };
 
-       {journalMode === 'INPUT_JURNAL' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-             <div className="lg:col-span-1 space-y-6">
-                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm sticky top-6">
-                   <h3 className="font-bold text-gray-800 mb-4 border-b pb-2">{editingJournalId ? 'Edit Jurnal' : 'Input Jurnal Harian'}</h3>
-                   <form onSubmit={saveJournal} className="space-y-4">
-                      {/* Form Content */}
-                      <div>
-                         <label className="block text-xs font-bold text-gray-600 mb-1">Tanggal</label>
-                         <input 
-                           type="date" 
-                           value={jourForm.date} 
-                           onChange={e => setJourForm({...jourForm, date: e.target.value, jamKe: '', className: '', subject: '', chapter: '', subChapter: ''})} 
-                           className="w-full border rounded px-3 py-2 text-sm" 
-                           required 
-                         />
-                      </div>
-                      <div>
-                         <label className="block text-xs font-bold text-gray-600 mb-1">Jam Ke (Pilih Slot {selectedDayName})</label>
-                         <div className="max-h-32 overflow-y-auto border rounded p-2 bg-gray-50 space-y-1">
-                             {dailyTeachingSlots.length > 0 ? dailyTeachingSlots.map((slot, i) => {
-                                 const val = `${slot.split('|')[0]}|${slot.split('|')[1]}|${slot.split('|')[2]}`;
-                                 const isChecked = jourForm.jamKe.split(',').includes(val);
-                                 return (
-                                    <label key={i} className="flex items-center gap-2 text-xs cursor-pointer p-1 hover:bg-gray-200 rounded">
-                                        <input type="checkbox" checked={isChecked} onChange={() => handleJamKeSelection(val)} className="rounded text-indigo-600" />
-                                        <span className="font-mono font-bold w-4">{slot.split('|')[1]}</span>
-                                        <span className="text-gray-500">{slot.split('|')[0]} ({slot.split('|')[1]}) - {slot.split('|')[2]}</span>
-                                    </label>
-                                 );
-                             }) : <p className="text-xs text-gray-400 italic">Tidak ada jadwal mengajar pada hari {selectedDayName} atau belum ada data jadwal.</p>}
-                         </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
+  const renderJournalTab = () => {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="flex gap-4 mb-4 border-b border-gray-200 pb-2">
+            <button 
+                onClick={() => setJournalMode('INPUT_JURNAL')}
+                className={`px-4 py-2 text-sm font-bold rounded-t-lg transition-colors ${journalMode === 'INPUT_JURNAL' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+                <BookOpen size={18} className="inline mr-2"/> Input Jurnal Harian
+            </button>
+            <button 
+                onClick={() => setJournalMode('INPUT_MATERI')}
+                className={`px-4 py-2 text-sm font-bold rounded-t-lg transition-colors ${journalMode === 'INPUT_MATERI' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+                <List size={18} className="inline mr-2"/> Bank Materi (Bab/Sub-Bab)
+            </button>
+        </div>
+
+        {journalMode === 'INPUT_MATERI' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-1 bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-fit">
+                    <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        {editingMaterialId ? 'Edit Materi' : 'Tambah Materi Baru'}
+                    </h3>
+                    <form onSubmit={saveMaterial} className="space-y-4">
                          <div>
-                            <label className="block text-xs font-bold text-gray-600 mb-1">Kelas</label>
-                            <input type="text" value={jourForm.className} readOnly className="w-full bg-gray-100 border rounded px-3 py-2 text-sm font-bold text-gray-700" placeholder="Otomatis" />
-                         </div>
-                         <div>
-                            <label className="block text-xs font-bold text-gray-600 mb-1">Semester</label>
-                            <select value={jourForm.semester} onChange={e => setJourForm({...jourForm, semester: e.target.value as any})} className="w-full border rounded px-3 py-2 text-sm">
-                               <option value="1">Ganjil</option>
-                               <option value="2">Genap</option>
+                            <label className="block text-xs font-bold text-gray-600 mb-1">Mata Pelajaran</label>
+                            <select value={matForm.subject} onChange={(e) => setMatForm({...matForm, subject: e.target.value})} className="w-full border rounded px-3 py-2 text-sm" required>
+                                <option value="">-- Pilih Mapel --</option>
+                                {mySubjects.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
-                         </div>
-                      </div>
-                      <div>
-                          <label className="block text-xs font-bold text-gray-600 mb-1">Mata Pelajaran (Otomatis)</label>
-                          <select 
-                            value={jourForm.subject} 
-                            onChange={e => setJourForm({...jourForm, subject: e.target.value, chapter: '', subChapter: ''})} 
-                            className="w-full border rounded px-3 py-2 text-sm"
-                            required
-                          >
-                             <option value="">-- Pilih Mapel --</option>
-                             {mySubjects.map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
-                      </div>
-
-                      <div>
-                         <label className="block text-xs font-bold text-gray-600 mb-1">Bab</label>
-                         <select value={jourForm.chapter} onChange={e => setJourForm({...jourForm, chapter: e.target.value, subChapter: ''})} className="w-full border rounded px-3 py-2 text-sm" required disabled={!jourForm.subject}>
-                            <option value="">-- Pilih Bab --</option>
-                            {availableChapters.map(m => <option key={m.id} value={m.chapter}>{m.chapter}</option>)}
-                         </select>
-                      </div>
-                      {jourForm.chapter && (
-                         <div>
-                             <label className="block text-xs font-bold text-gray-600 mb-1">Sub Bab (Bisa &gt; 1)</label>
-                             <div className="max-h-32 overflow-y-auto border rounded p-2 bg-gray-50 space-y-1">
-                                {availableSubChapters.map((sub, idx) => (
-                                    <label key={idx} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-100 p-1 rounded">
-                                        <input 
-                                            type="checkbox" 
-                                            checked={jourForm.subChapter.split(',').includes(sub)}
-                                            onChange={() => handleJournalSubChapterToggle(sub)}
-                                            className="rounded text-indigo-600"
-                                        />
-                                        {sub}
-                                    </label>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 mb-1">Semester</label>
+                             <select value={matForm.semester} onChange={(e) => setMatForm({...matForm, semester: e.target.value as '1'|'2'})} className="w-full border rounded px-3 py-2 text-sm">
+                                <option value="1">Ganjil</option>
+                                <option value="2">Genap</option>
+                            </select>
+                        </div>
+                        <div>
+                             <label className="block text-xs font-bold text-gray-600 mb-1">Kelas Target</label>
+                             <div className="flex flex-wrap gap-2">
+                                {CLASSES.map(cls => (
+                                    <button 
+                                        key={cls} type="button" 
+                                        onClick={() => handleMatClassToggle(cls)}
+                                        className={`px-2 py-1 text-xs rounded border ${matForm.classes.includes(cls) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300'}`}
+                                    >
+                                        {cls}
+                                    </button>
                                 ))}
                              </div>
-                         </div>
-                      )}
-                      <div>
-                         <label className="block text-xs font-bold text-gray-600 mb-1">Kegiatan Pembelajaran</label>
-                         <textarea value={jourForm.activity} onChange={e => setJourForm({...jourForm, activity: e.target.value})} className="w-full border rounded px-3 py-2 text-sm h-20" placeholder="Deskripsi singkat..." />
-                      </div>
-                      <div>
-                         <label className="block text-xs font-bold text-gray-600 mb-1">Catatan / Kejadian</label>
-                         <textarea value={jourForm.notes} onChange={e => setJourForm({...jourForm, notes: e.target.value})} className="w-full border rounded px-3 py-2 text-sm h-16" placeholder="Catatan khusus..." />
-                      </div>
-                      <div className="border-t pt-4">
-                          <h4 className="font-bold text-gray-700 text-xs mb-2">Absensi Siswa ({jourForm.className || '-'})</h4>
-                          {jourForm.className ? (
-                             <div className="max-h-60 overflow-y-auto border rounded bg-white">
-                                <table className="w-full text-xs">
-                                   <thead className="bg-gray-50 sticky top-0">
-                                      <tr>
-                                         <th className="px-2 py-1 text-left">Nama</th>
-                                         <th className="px-2 py-1 text-center">Status</th>
-                                      </tr>
-                                   </thead>
-                                   <tbody className="divide-y">
-                                      {students.filter(s => s.className === jourForm.className).map(s => (
-                                         <tr key={s.id}>
-                                            <td className="px-2 py-1">{s.name}</td>
-                                            <td className="px-2 py-1 flex justify-center gap-1">
-                                               {['H','S','I','A','DL'].map(st => (
-                                                  <label key={st} className="cursor-pointer px-1 hover:bg-gray-100 rounded">
-                                                     <input 
-                                                        type="radio" 
-                                                        name={`js-${s.id}`} 
-                                                        checked={(jourForm.studentAttendance[s.id] || 'H') === st}
-                                                        onChange={() => handleStudentAttendanceChange(s.id, st as any)}
-                                                     /> <span className={`font-bold ${st==='H'?'text-green-600':st==='A'?'text-red-600':'text-gray-600'}`}>{st}</span>
-                                                  </label>
-                                               ))}
-                                            </td>
-                                         </tr>
-                                      ))}
-                                   </tbody>
-                                </table>
-                             </div>
-                          ) : <p className="text-xs text-gray-400">Pilih jam/kelas dulu.</p>}
-                      </div>
-
-                      <div className="flex gap-2">
-                         {editingJournalId && <button type="button" onClick={handleCancelEdit} className="flex-1 py-2 bg-gray-200 rounded font-bold text-sm">Batal</button>}
-                         <button type="submit" className="flex-[2] py-2 bg-indigo-600 text-white rounded-lg font-bold shadow hover:bg-indigo-700">
-                             {editingJournalId ? 'Simpan Perubahan' : 'Simpan Jurnal'}
-                         </button>
-                      </div>
-                   </form>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 mb-1">Judul Bab</label>
+                            <input type="text" value={matForm.chapter} onChange={(e) => setMatForm({...matForm, chapter: e.target.value})} className="w-full border rounded px-3 py-2 text-sm" placeholder="Misal: Bab 1. Bilangan Bulat" required />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 mb-1">Sub Bab (Topik Bahasan)</label>
+                            <div className="space-y-2">
+                                {matForm.subChapters.map((sub, idx) => (
+                                    <div key={idx} className="flex gap-2">
+                                        <input type="text" value={sub} onChange={(e) => handleSubChapterChange(idx, e.target.value)} className="flex-1 border rounded px-3 py-2 text-sm" placeholder={`Sub Bab ${idx+1}`} required />
+                                        {matForm.subChapters.length > 1 && (
+                                            <button type="button" onClick={() => removeSubChapter(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded"><X size={16}/></button>
+                                        )}
+                                    </div>
+                                ))}
+                                <button type="button" onClick={addSubChapter} className="text-xs text-indigo-600 font-bold hover:underline flex items-center gap-1"><Plus size={14}/> Tambah Sub Bab</button>
+                            </div>
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                            {editingMaterialId && <button type="button" onClick={() => { setEditingMaterialId(null); setMatForm({semester: '2', classes: [], chapter: '', subChapters: [''], subject: matForm.subject}); }} className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg font-bold text-sm">Batal</button>}
+                            <button type="submit" className="flex-[2] py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 shadow-sm">{editingMaterialId ? 'Update Materi' : 'Simpan Materi'}</button>
+                        </div>
+                    </form>
                 </div>
-             </div>
+                
+                <div className="lg:col-span-2 space-y-4">
+                     {teachingMaterials.filter(m => m.teacherName === currentUser).map(mat => (
+                         <div key={mat.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow relative group">
+                            <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => handleEditMaterialClick(mat)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"><Edit2 size={16}/></button>
+                                <button onClick={() => onDeleteMaterial && onDeleteMaterial(mat.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16}/></button>
+                            </div>
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded uppercase">{mat.subject}</span>
+                                <span className="text-xs text-gray-500 font-medium">Semester {mat.semester === '1' ? 'Ganjil' : 'Genap'}</span>
+                            </div>
+                            <h4 className="font-bold text-gray-800 text-lg mb-1">{mat.chapter}</h4>
+                            <div className="flex flex-wrap gap-2 mb-3">
+                                {mat.classes.map(c => <span key={c} className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono font-bold">{c}</span>)}
+                            </div>
+                            <div className="pl-4 border-l-2 border-indigo-200">
+                                <ul className="list-disc list-inside text-sm text-gray-600">
+                                    {mat.subChapters.map((sub, i) => <li key={i}>{sub}</li>)}
+                                </ul>
+                            </div>
+                         </div>
+                     ))}
+                     {teachingMaterials.filter(m => m.teacherName === currentUser).length === 0 && (
+                         <div className="text-center py-12 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-300">Belum ada materi. Silakan tambah materi terlebih dahulu.</div>
+                     )}
+                </div>
+            </div>
+        )}
 
-             <div className="lg:col-span-2">
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-                   <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center rounded-t-xl">
-                      <h3 className="font-bold text-gray-800">Riwayat Jurnal Mengajar</h3>
-                      
-                      <div className="flex flex-wrap items-center gap-2">
-                         <div className="flex items-center gap-1 bg-white border border-gray-300 rounded-lg px-2 py-1.5 shadow-sm">
-                            <Filter size={14} className="text-gray-400"/>
-                            <select 
-                               value={journalFilterClass} 
-                               onChange={(e) => setJournalFilterClass(e.target.value)}
-                               className="text-xs font-bold text-gray-700 border-none outline-none bg-transparent"
-                            >
-                               <option value="">Semua Kelas</option>
-                               {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+        {journalMode === 'INPUT_JURNAL' && (
+             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                 <div className="lg:col-span-1 bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-fit">
+                    <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        {editingJournalId ? 'Edit Jurnal' : 'Input Jurnal Harian'}
+                    </h3>
+                    <form onSubmit={saveJournal} className="space-y-4">
+                        <div><label className="block text-xs font-bold text-gray-600 mb-1">Tanggal</label><input type="date" value={jourForm.date} onChange={(e) => setJourForm({...jourForm, date: e.target.value})} className="w-full border rounded px-3 py-2 text-sm" required /></div>
+                        
+                        <div>
+                             <label className="block text-xs font-bold text-gray-600 mb-1">Jam Mengajar Hari Ini ({selectedDayName})</label>
+                             <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto border p-2 rounded bg-gray-50">
+                                {dailyTeachingSlots.length > 0 ? dailyTeachingSlots.map(slot => (
+                                    <button 
+                                        key={slot} type="button"
+                                        onClick={() => handleJamKeSelection(slot)}
+                                        className={`text-xs p-2 rounded border text-left ${jourForm.jamKe.includes(slot) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-200 hover:border-indigo-300'}`}
+                                    >
+                                        <div className="font-bold">Jam ke-{slot.split('|')[1]}</div>
+                                        <div className="text-[10px] opacity-90">{slot.split('|')[2]}</div>
+                                    </button>
+                                )) : <p className="text-xs text-gray-400 col-span-2 text-center py-2">Tidak ada jadwal mengajar di hari ini.</p>}
+                             </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                             <div>
+                                <label className="block text-xs font-bold text-gray-600 mb-1">Kelas</label>
+                                <input type="text" value={jourForm.className} readOnly className="w-full bg-gray-100 border rounded px-3 py-2 text-sm font-bold text-gray-700" placeholder="Pilih jam..." />
+                             </div>
+                             <div>
+                                <label className="block text-xs font-bold text-gray-600 mb-1">Mapel</label>
+                                <input type="text" value={jourForm.subject} readOnly className="w-full bg-gray-100 border rounded px-3 py-2 text-sm font-bold text-gray-700" />
+                             </div>
+                        </div>
+                        
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 mb-1">Materi Pembelajaran (Bab)</label>
+                            <select value={jourForm.chapter} onChange={(e) => setJourForm({...jourForm, chapter: e.target.value, subChapter: ''})} className="w-full border rounded px-3 py-2 text-sm" required>
+                                <option value="">-- Pilih Materi --</option>
+                                {availableChapters.map(c => <option key={c.id} value={c.chapter}>{c.chapter}</option>)}
                             </select>
-                         </div>
+                        </div>
+                        
+                        {jourForm.chapter && (
+                            <div>
+                                <label className="block text-xs font-bold text-gray-600 mb-1">Sub Bab (Bisa pilih &gt; 1)</label>
+                                <div className="space-y-1 bg-gray-50 p-2 rounded border">
+                                    {availableSubChapters.map(sub => (
+                                        <label key={sub} className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-1 rounded">
+                                            <input type="checkbox" checked={jourForm.subChapter.split(',').map(s=>s.trim()).includes(sub)} onChange={() => handleJournalSubChapterToggle(sub)} className="rounded text-indigo-600"/>
+                                            <span className="text-xs text-gray-700">{sub}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
-                         <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-2 py-1.5 shadow-sm">
-                            <span className="text-[10px] text-gray-500 font-bold">Dari:</span>
-                            <input 
-                              type="date" 
-                              value={journalDateFrom} 
-                              onChange={(e) => setJournalDateFrom(e.target.value)}
-                              className="text-xs font-bold text-gray-700 border-none outline-none bg-transparent w-24"
-                            />
-                         </div>
-                         <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-2 py-1.5 shadow-sm">
-                            <span className="text-[10px] text-gray-500 font-bold">Sampai:</span>
-                            <input 
-                              type="date" 
-                              value={journalDateTo} 
-                              onChange={(e) => setJournalDateTo(e.target.value)}
-                              className="text-xs font-bold text-gray-700 border-none outline-none bg-transparent w-24"
-                            />
-                         </div>
+                        <div><label className="block text-xs font-bold text-gray-600 mb-1">Kegiatan Pembelajaran</label><textarea value={jourForm.activity} onChange={(e) => setJourForm({...jourForm, activity: e.target.value})} className="w-full border rounded px-3 py-2 text-sm" rows={2} required /></div>
+                        
+                        {/* ABSENSI SISWA GRID - Updated Logic */}
+                        {jourForm.className && (
+                            <div className="border rounded p-3 bg-gray-50">
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="text-xs font-bold text-gray-700">Absensi Siswa (Kelas {jourForm.className})</label>
+                                    <span className="text-[10px] text-gray-500">Total: {students.filter(s => s.className === jourForm.className).length} Siswa</span>
+                                </div>
+                                <div className="max-h-64 overflow-y-auto pr-1 space-y-1">
+                                    {students.filter(s => s.className === jourForm.className).map(student => {
+                                        const status = jourForm.studentAttendance[student.id] || 'H';
+                                        return (
+                                            <div key={student.id} className="flex items-center justify-between bg-white p-2 rounded border border-gray-200 shadow-sm text-xs">
+                                                <span className="font-medium text-gray-800 truncate w-1/2" title={student.name}>{student.name}</span>
+                                                <div className="flex gap-1">
+                                                    {(['S', 'I', 'A'] as const).map(sKey => (
+                                                        <button
+                                                            key={sKey}
+                                                            type="button"
+                                                            onClick={() => setJourForm(prev => ({
+                                                                ...prev,
+                                                                studentAttendance: {
+                                                                    ...prev.studentAttendance,
+                                                                    [student.id]: status === sKey ? 'H' : sKey
+                                                                }
+                                                            }))}
+                                                            className={`w-6 h-6 flex items-center justify-center rounded font-bold transition-all ${
+                                                                status === sKey 
+                                                                    ? (sKey === 'S' ? 'bg-blue-600 text-white' : sKey === 'I' ? 'bg-orange-500 text-white' : 'bg-red-600 text-white')
+                                                                    : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                                                            }`}
+                                                        >
+                                                            {sKey}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    {students.filter(s => s.className === jourForm.className).length === 0 && (
+                                        <p className="text-xs text-center text-gray-400 py-4">Data siswa belum tersedia untuk kelas ini.</p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
-                         <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-2 py-1.5 shadow-sm">
-                            <span className="text-[10px] text-gray-500 font-bold">Tgl Cetak:</span>
-                            <input 
-                              type="date" 
-                              value={printDate} 
-                              onChange={(e) => setPrintDate(e.target.value)}
-                              className="text-xs font-bold text-gray-700 border-none outline-none bg-transparent w-24"
-                            />
-                         </div>
+                        <div><label className="block text-xs font-bold text-gray-600 mb-1">Catatan Kejadian / Lain-lain</label><textarea value={jourForm.notes} onChange={(e) => setJourForm({...jourForm, notes: e.target.value})} className="w-full border rounded px-3 py-2 text-sm" rows={2} /></div>
 
-                         <div className="relative" ref={journalDownloadRef}>
-                           <button 
-                              onClick={() => setIsJournalDownloadOpen(!isJournalDownloadOpen)}
-                              className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50 transition-colors"
-                           >
-                              <Download size={16} /> <span className="hidden sm:inline">Download</span>
-                              <ChevronDown size={14} className={`transition-transform duration-200 ${isJournalDownloadOpen ? 'rotate-180' : ''}`} />
-                           </button>
-                           {isJournalDownloadOpen && (
-                              <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20 animate-fade-in ring-1 ring-black ring-opacity-5">
-                                 <div className="py-1">
-                                     <div className="px-4 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider">Pilih Format</div>
-                                     <button 
-                                       onClick={() => downloadJournalHistoryPDF('a4')}
-                                       className="w-full text-left px-4 py-3 text-sm hover:bg-red-50 hover:text-red-700 flex items-center gap-3 text-gray-700 transition-colors border-l-4 border-transparent hover:border-red-500"
-                                     >
-                                        <FileText size={18} className="text-red-500"/> 
-                                        <div>
-                                            <span className="font-bold">PDF (A4)</span>
-                                            <p className="text-[10px] text-gray-500 font-normal">Ukuran Standar</p>
-                                        </div>
-                                     </button>
-                                     <button 
-                                       onClick={() => downloadJournalHistoryPDF('f4')}
-                                       className="w-full text-left px-4 py-3 text-sm hover:bg-red-50 hover:text-red-700 flex items-center gap-3 text-gray-700 transition-colors border-l-4 border-transparent hover:border-red-500"
-                                     >
-                                        <FileText size={18} className="text-red-500"/> 
-                                        <div>
-                                            <span className="font-bold">PDF (F4/Folio)</span>
-                                            <p className="text-[10px] text-gray-500 font-normal">Ukuran Panjang</p>
-                                        </div>
-                                     </button>
-                                     <div className="border-t border-gray-100 my-1"></div>
-                                     <button 
-                                       onClick={downloadJournalHistoryExcel}
-                                       className="w-full text-left px-4 py-3 text-sm hover:bg-green-50 hover:text-green-700 flex items-center gap-3 text-gray-700 transition-colors border-l-4 border-transparent hover:border-green-500"
-                                     >
-                                        <FileSpreadsheet size={18} className="text-green-600"/> 
-                                        <div>
-                                            <span className="font-bold">Excel</span>
-                                            <p className="text-[10px] text-gray-500 font-normal">Spreadsheet .xlsx</p>
-                                        </div>
-                                     </button>
-                                 </div>
-                              </div>
-                           )}
-                         </div>
-                      </div>
+                        <div className="flex gap-2 pt-2">
+                            {editingJournalId && <button type="button" onClick={handleCancelEdit} className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg font-bold text-sm">Batal</button>}
+                            <button type="submit" className="flex-[2] py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 shadow-sm">{editingJournalId ? 'Update Jurnal' : 'Simpan Jurnal'}</button>
+                        </div>
+                    </form>
+                 </div>
 
-                   </div>
-                   <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200 text-xs">
-                         <thead className="bg-white">
-                            <tr>
-                               <th className="px-4 py-3 text-left font-bold text-gray-600">Tanggal</th>
-                               <th className="px-4 py-3 text-left font-bold text-gray-600">Kelas</th>
-                               <th className="px-4 py-3 text-left font-bold text-gray-600">Jam Ke</th>
-                               <th className="px-4 py-3 text-left font-bold text-gray-600">Mapel</th>
-                               <th className="px-4 py-3 text-left font-bold text-gray-600">Bab</th>
-                               <th className="px-4 py-3 text-left font-bold text-gray-600">Sub Bab</th>
-                               <th className="px-4 py-3 text-left font-bold text-gray-600 w-48">Kegiatan</th>
-                               <th className="px-4 py-3 text-left font-bold text-gray-600">Catatan</th>
-                               <th className="px-4 py-3 text-left font-bold text-gray-600">Absensi</th>
-                               <th className="px-4 py-3 text-center font-bold text-gray-600">Aksi</th>
-                            </tr>
-                         </thead>
-                         <tbody className="divide-y divide-gray-200">
-                            {myJournals.map(j => {
-                               const absList: string[] = [];
-                               if(j.studentAttendance) {
-                                  Object.entries(j.studentAttendance).forEach(([sid, status]) => {
-                                      if(status !== 'H') {
-                                         const sName = students.find(s=>s.id===sid)?.name || 'Siswa';
-                                         absList.push(`${status}: ${sName}`);
-                                      }
-                                  });
-                               }
-                               const absString = absList.length > 0 ? absList.join(', ') : 'Nihil';
+                 <div className="lg:col-span-2 space-y-4">
+                     <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-4">
+                        <div className="flex flex-wrap justify-between items-center gap-2">
+                            <h3 className="font-bold text-gray-800">Riwayat Jurnal</h3>
+                            <div className="flex gap-2 items-center">
+                                <span className="text-xs font-bold text-gray-600">Filter:</span>
+                                <input type="date" value={journalDateFrom} onChange={(e) => setJournalDateFrom(e.target.value)} className="border rounded px-2 py-1 text-xs" />
+                                <span className="text-gray-400">-</span>
+                                <input type="date" value={journalDateTo} onChange={(e) => setJournalDateTo(e.target.value)} className="border rounded px-2 py-1 text-xs" />
+                                <select value={journalFilterClass} onChange={(e) => setJournalFilterClass(e.target.value)} className="border rounded px-2 py-1 text-xs">
+                                    <option value="">Semua Kelas</option>
+                                    {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap justify-between items-center gap-4 pt-2 border-t border-gray-100">
+                            <div className="flex items-center gap-2">
+                                <label className="text-xs font-bold text-gray-600">Tanggal Cetak:</label>
+                                <input type="date" value={printDate} onChange={(e) => setPrintDate(e.target.value)} className="text-xs border rounded px-2 py-1" />
+                            </div>
+                            <div className="relative" ref={journalDownloadRef}>
+                                 <button onClick={() => setIsJournalDownloadOpen(!isJournalDownloadOpen)} className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50">
+                                    <Download size={16}/> Download Rekap <ChevronDown size={14}/>
+                                 </button>
+                                 {isJournalDownloadOpen && (
+                                    <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20">
+                                        <button onClick={() => downloadJournalHistoryPDF('a4')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Kertas A4</button>
+                                        <button onClick={() => downloadJournalHistoryPDF('f4')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Kertas F4</button>
+                                    </div>
+                                 )}
+                            </div>
+                        </div>
+                     </div>
+                     
+                     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200 text-xs">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-3 py-3 text-left font-bold text-gray-600 w-10">No</th>
+                                        <th className="px-3 py-3 text-left font-bold text-gray-600 w-24">Tanggal</th>
+                                        <th className="px-3 py-3 text-left font-bold text-gray-600 w-16">Kelas</th>
+                                        <th className="px-3 py-3 text-left font-bold text-gray-600">Mapel</th>
+                                        <th className="px-3 py-3 text-left font-bold text-gray-600">Bab</th>
+                                        <th className="px-3 py-3 text-left font-bold text-gray-600">Sub Bab</th>
+                                        <th className="px-3 py-3 text-left font-bold text-gray-600">Kegiatan</th>
+                                        <th className="px-3 py-3 text-left font-bold text-gray-600">Catatan</th>
+                                        <th className="px-3 py-3 text-left font-bold text-gray-600 w-32">Absensi</th>
+                                        <th className="px-3 py-3 text-center font-bold text-gray-600 w-16">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                    {myJournals.map((j, idx) => {
+                                        const absList: string[] = [];
+                                        if (j.studentAttendance) {
+                                            Object.entries(j.studentAttendance).forEach(([sid, status]) => {
+                                                if (status !== 'H') {
+                                                    const s = students.find(stud => stud.id === sid);
+                                                    if (s) absList.push(`${s.name.split(' ')[0]}(${status})`);
+                                                }
+                                            });
+                                        }
+                                        return (
+                                            <tr key={j.id} className="hover:bg-gray-50">
+                                                <td className="px-3 py-2 text-center text-gray-500">{idx + 1}</td>
+                                                <td className="px-3 py-2 whitespace-nowrap">{j.date}</td>
+                                                <td className="px-3 py-2 font-bold text-indigo-600">{j.className}</td>
+                                                <td className="px-3 py-2">{j.subject}</td>
+                                                <td className="px-3 py-2">{j.chapter}</td>
+                                                <td className="px-3 py-2 text-gray-500">{j.subChapter}</td>
+                                                <td className="px-3 py-2">{j.activity}</td>
+                                                <td className="px-3 py-2 text-gray-500 italic">{j.notes || '-'}</td>
+                                                <td className="px-3 py-2 text-red-600 font-medium text-[10px]">
+                                                    {absList.length > 0 ? absList.join(', ') : 'Nihil'}
+                                                </td>
+                                                <td className="px-3 py-2 text-center">
+                                                    <div className="flex justify-center gap-1">
+                                                        <button onClick={() => handleEditJournalClick(j)} className="text-blue-600 hover:bg-blue-50 p-1 rounded"><Edit2 size={14}/></button>
+                                                        <button onClick={() => onDeleteJournal && onDeleteJournal(j.id)} className="text-red-600 hover:bg-red-50 p-1 rounded"><Trash2 size={14}/></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )
+                                    })}
+                                    {myJournals.length === 0 && <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400">Belum ada jurnal mengajar.</td></tr>}
+                                </tbody>
+                            </table>
+                        </div>
+                     </div>
+                 </div>
+             </div>
+        )}
+      </div>
+    );
+  };
 
-                               return (
-                                  <tr key={j.id} className="hover:bg-gray-50">
-                                     <td className="px-4 py-3 whitespace-nowrap">{j.date}</td>
-                                     <td className="px-4 py-3 font-bold">{j.className}</td>
-                                     <td className="px-4 py-3 font-mono">{j.jamKe ? j.jamKe.split(',').map(s=>s.split('|')[1]).join(',') : '-'}</td>
-                                     <td className="px-4 py-3 font-medium">{j.subject || '-'}</td>
-                                     <td className="px-4 py-3">{j.chapter}</td>
-                                     <td className="px-4 py-3">{j.subChapter}</td>
-                                     <td className="px-4 py-3">{j.activity}</td>
-                                     <td className="px-4 py-3 italic text-gray-500">{j.notes || '-'}</td>
-                                     <td className="px-4 py-3 text-red-600 font-medium">{absString}</td>
-                                     <td className="px-4 py-3 text-center flex justify-center gap-2">
-                                        <button onClick={() => handleEditJournalClick(j)} className="text-blue-500 hover:bg-blue-50 p-1 rounded"><Edit2 size={16}/></button>
-                                        <button onClick={() => onDeleteJournal && onDeleteJournal(j.id)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={16}/></button>
-                                     </td>
-                                  </tr>
-                               );
-                            })}
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 min-h-[600px] flex flex-col animate-fade-in">
+      <div className="p-6">
+         {activeTab === 'CLASS' && (
+            <div className="space-y-6 animate-fade-in">
+               <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                     <span className="text-sm font-bold text-gray-600">Pilih Kelas:</span>
+                     <select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">{CLASSES.map(cls => <option key={cls} value={cls}>{cls}</option>)}</select>
+                  </div>
+                  <button onClick={downloadClassSchedulePDF} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 shadow-sm"><Download size={16} /> Download PDF</button>
+               </div>
+               <div className="overflow-x-auto border rounded-xl shadow-sm">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                     <thead className="bg-slate-800 text-white"><tr><th className="px-4 py-3 text-center w-24">Jam</th><th className="px-4 py-3 text-center w-32">Waktu</th><th className="px-4 py-3 text-left">Mata Pelajaran</th><th className="px-4 py-3 text-left">Guru</th></tr></thead>
+                     <tbody className="bg-white divide-y divide-gray-200">{SCHEDULE_DATA.flatMap(day => [<tr key={`header-${day.day}`} className="bg-gray-100"><td colSpan={4} className="px-4 py-2 font-bold text-gray-700 border-y border-gray-200">{day.day}</td></tr>, ...day.rows.map((row) => { if(row.activity) { return (<tr key={`${day.day}-${row.jam}`} className="bg-orange-50"><td className="px-4 py-3 text-center font-bold text-gray-500">{row.jam}</td><td className="px-4 py-3 text-center font-mono text-xs text-gray-500">{row.waktu}</td><td colSpan={2} className="px-4 py-3 text-center font-bold text-orange-800">{row.activity}</td></tr>); } const key = `${day.day}-${row.jam}-${selectedClass}`; const code = scheduleMap[key]; const info = code ? codeToDataMap[code] : null; return (<tr key={`${day.day}-${row.jam}`} className="hover:bg-gray-50"><td className="px-4 py-3 text-center font-bold text-gray-600">{row.jam}</td><td className="px-4 py-3 text-center font-mono text-xs text-gray-500">{row.waktu}</td><td className="px-4 py-3 font-medium text-gray-900">{info?.subject || '-'}</td><td className="px-4 py-3 text-gray-600">{info?.name || '-'}</td></tr>); })])}</tbody>
+                  </table>
+               </div>
+            </div>
+         )}
+
+         {activeTab === 'TEACHER' && (
+            <div className="space-y-6 animate-fade-in">
+               <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                     <span className="text-sm font-bold text-gray-600">Pilih Guru:</span>
+                     <select value={selectedTeacherId} onChange={(e) => setSelectedTeacherId(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 max-w-xs"><option value="">-- Pilih Guru --</option>{teacherNames.map(name => <option key={name} value={name}>{name}</option>)}</select>
+                  </div>
+                  <button onClick={downloadTeacherSchedulePDF} disabled={!selectedTeacherId} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 shadow-sm disabled:bg-gray-300"><Download size={16} /> Download PDF</button>
+               </div>
+               {selectedTeacherId ? (
+                   <div className="overflow-x-auto border rounded-xl shadow-sm">
+                      <table className="min-w-full divide-y divide-gray-200 text-sm">
+                         <thead className="bg-emerald-700 text-white"><tr><th className="px-4 py-3 text-left w-32">Hari</th><th className="px-4 py-3 text-center w-24">Jam</th><th className="px-4 py-3 text-center w-32">Waktu</th><th className="px-4 py-3 text-center w-24">Kelas</th><th className="px-4 py-3 text-left">Mata Pelajaran</th></tr></thead>
+                         <tbody className="bg-white divide-y divide-gray-200">
+                            {(() => {
+                               const myRows: React.ReactElement[] = []; const myCodes = teacherData.filter(t => t.name === selectedTeacherId).map(t => t.code);
+                               SCHEDULE_DATA.forEach(day => { day.rows.forEach(row => { if(row.activity) return; CLASSES.forEach(cls => { const key = `${day.day}-${row.jam}-${cls}`; const code = scheduleMap[key]; if (code && myCodes.includes(code)) { const info = codeToDataMap[code]; myRows.push(<tr key={key} className="hover:bg-gray-50"><td className="px-4 py-3 font-bold text-gray-700">{day.day}</td><td className="px-4 py-3 text-center font-bold text-gray-600">{row.jam}</td><td className="px-4 py-3 text-center font-mono text-xs text-gray-500">{row.waktu}</td><td className="px-4 py-3 text-center font-bold text-indigo-600 bg-indigo-50 rounded-lg">{cls}</td><td className="px-4 py-3 text-gray-800">{info?.subject}</td></tr>); } }); }); });
+                               return myRows.length > 0 ? myRows : (<tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">Tidak ada jadwal mengajar.</td></tr>);
+                            })()}
                          </tbody>
                       </table>
                    </div>
-                </div>
-             </div>
-          </div>
-       )}
-    </div>
-  );
-
-  // --- RETURN UTAMA YANG DIPERBAIKI ---
-  return (
-    <div className="space-y-6 animate-fade-in">
-        {/* Main Tab Navigation */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-1 flex flex-wrap sm:flex-nowrap gap-1">
-            <button
-                onClick={() => setActiveTab('CLASS')}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-bold transition-all ${
-                    activeTab === 'CLASS' 
-                    ? 'bg-indigo-600 text-white shadow-md' 
-                    : 'bg-transparent text-gray-600 hover:bg-gray-100'
-                }`}
-            >
-                <Layout size={18} />
-                Jadwal Kelas
-            </button>
-            <button
-                onClick={() => setActiveTab('TEACHER')}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-bold transition-all ${
-                    activeTab === 'TEACHER' 
-                    ? 'bg-indigo-600 text-white shadow-md' 
-                    : 'bg-transparent text-gray-600 hover:bg-gray-100'
-                }`}
-            >
-                <User size={18} />
-                Jadwal Guru
-            </button>
-            {role === 'TEACHER' && (
-                <>
-                <button
-                    onClick={() => setActiveTab('JOURNAL')}
-                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-bold transition-all ${
-                        activeTab === 'JOURNAL' 
-                        ? 'bg-indigo-600 text-white shadow-md' 
-                        : 'bg-transparent text-gray-600 hover:bg-gray-100'
-                    }`}
-                >
-                    <BookOpen size={18} />
-                    Jurnal Mengajar
-                </button>
-                <button
-                    onClick={() => setActiveTab('MONITORING')}
-                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-bold transition-all ${
-                        activeTab === 'MONITORING' 
-                        ? 'bg-indigo-600 text-white shadow-md' 
-                        : 'bg-transparent text-gray-600 hover:bg-gray-100'
-                    }`}
-                >
-                    <Users size={18} />
-                    Monitoring Absensi
-                </button>
-                <button
-                    onClick={() => setActiveTab('GRADES')}
-                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-bold transition-all ${
-                        activeTab === 'GRADES' 
-                        ? 'bg-indigo-600 text-white shadow-md' 
-                        : 'bg-transparent text-gray-600 hover:bg-gray-100'
-                    }`}
-                >
-                    <GraduationCap size={18} />
-                    Nilai Siswa
-                </button>
-                <button
-                    onClick={() => setActiveTab('HOMEROOM')}
-                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-bold transition-all ${
-                        activeTab === 'HOMEROOM' 
-                        ? 'bg-indigo-600 text-white shadow-md' 
-                        : 'bg-transparent text-gray-600 hover:bg-gray-100'
-                    }`}
-                >
-                    <ClipboardList size={18} />
-                    Catatan Wali Kelas
-                </button>
-                </>
-            )}
-        </div>
-
-        {/* Tab Content: Jadwal Kelas */}
-        {activeTab === 'CLASS' && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in">
-                <div className="p-6 border-b border-gray-200 bg-gray-50 flex flex-col sm:flex-row justify-between items-center gap-4">
-                    <div className="flex items-center gap-4 w-full sm:w-auto">
-                        <div className="p-3 bg-indigo-100 text-indigo-600 rounded-full">
-                            <Layout size={24} />
-                        </div>
-                        <div>
-                            <h3 className="text-lg font-bold text-gray-800">Jadwal Pelajaran Kelas</h3>
-                            <p className="text-xs text-gray-500">Pilih kelas untuk melihat jadwal.</p>
-                        </div>
-                    </div>
-                    <div className="flex gap-2 w-full sm:w-auto">
-                        <select 
-                            value={selectedClass} 
-                            onChange={(e) => setSelectedClass(e.target.value)}
-                            className="flex-1 sm:w-48 border border-gray-300 bg-white rounded-lg px-4 py-2 text-sm font-bold text-gray-700 shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                        >
-                            {CLASSES.map(cls => <option key={cls} value={cls}>{cls}</option>)}
-                        </select>
-                        <button 
-                            onClick={downloadClassSchedulePDF}
-                            className="bg-red-600 text-white p-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm"
-                            title="Download PDF"
-                        >
-                            <FileText size={20} />
-                        </button>
-                    </div>
-                </div>
-                
-                <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-white">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-32 border-r border-gray-100">Hari</th>
-                                <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-20 border-r border-gray-100">Jam</th>
-                                <th className="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-32 border-r border-gray-100">Waktu</th>
-                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Mata Pelajaran & Guru</th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {SCHEDULE_DATA.map((daySchedule) => (
-                                <React.Fragment key={daySchedule.day}>
-                                    {daySchedule.rows.map((row, rowIdx) => {
-                                        const key = `${daySchedule.day}-${row.jam}-${selectedClass}`;
-                                        const code = scheduleMap[key];
-                                        const info = code ? codeToDataMap[String(code)] : null;
-                                        const isFirstRow = rowIdx === 0;
-                                        
-                                        if (row.activity) {
-                                            return (
-                                                <tr key={`${daySchedule.day}-${rowIdx}`} className="bg-orange-50">
-                                                    {isFirstRow && (
-                                                        <td rowSpan={daySchedule.rows.length} className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 border-r border-gray-200 bg-white align-top pt-6">
-                                                            {daySchedule.day}
-                                                        </td>
-                                                    )}
-                                                    <td className="px-6 py-2 text-center text-xs font-bold text-orange-800 border-r border-orange-100">{row.jam}</td>
-                                                    <td className="px-6 py-2 text-center text-xs font-mono text-orange-800 border-r border-orange-100">{row.waktu}</td>
-                                                    <td className="px-6 py-2 text-sm font-bold text-orange-800 italic text-center">
-                                                        {row.activity}
-                                                    </td>
-                                                </tr>
-                                            );
-                                        }
-
-                                        return (
-                                            <tr key={`${daySchedule.day}-${rowIdx}`} className="hover:bg-gray-50 transition-colors">
-                                                {isFirstRow && (
-                                                    <td rowSpan={daySchedule.rows.length} className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 border-r border-gray-200 bg-white align-top pt-6">
-                                                        {daySchedule.day}
-                                                    </td>
-                                                )}
-                                                <td className="px-6 py-3 text-center text-sm font-medium text-gray-500 border-r border-gray-100">{row.jam}</td>
-                                                <td className="px-6 py-3 text-center text-xs font-mono text-gray-500 border-r border-gray-100">{row.waktu}</td>
-                                                <td className="px-6 py-3">
-                                                    {info ? (
-                                                        <div>
-                                                            <div className="text-sm font-bold text-indigo-900">{info.subject}</div>
-                                                            <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
-                                                                <User size={12} /> {info.name}
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <span className="text-gray-300 text-sm italic">- Kosong -</span>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </React.Fragment>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+               ) : (<div className="text-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl"><User size={48} className="mx-auto mb-2 opacity-20"/><p>Pilih nama guru untuk melihat jadwal.</p></div>)}
             </div>
-        )}
+         )}
 
-        {/* Tab Content: Jadwal Guru */}
-        {activeTab === 'TEACHER' && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in">
-                <div className="p-6 border-b border-gray-200 bg-gray-50 flex flex-col sm:flex-row justify-between items-center gap-4">
-                    <div className="flex items-center gap-4 w-full sm:w-auto">
-                        <div className="p-3 bg-emerald-100 text-emerald-600 rounded-full">
-                            <User size={24} />
-                        </div>
-                        <div>
-                            <h3 className="text-lg font-bold text-gray-800">Jadwal Mengajar Guru</h3>
-                            <p className="text-xs text-gray-500">Lihat jadwal spesifik per guru.</p>
-                        </div>
-                    </div>
-                    <div className="flex gap-2 w-full sm:w-auto">
-                        <select 
-                            value={selectedTeacherId} 
-                            onChange={(e) => setSelectedTeacherId(e.target.value)}
-                            className="flex-1 sm:w-64 border border-gray-300 bg-white rounded-lg px-4 py-2 text-sm font-bold text-gray-700 shadow-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                        >
-                            <option value="">-- Pilih Guru --</option>
-                            {teacherNames.map(name => <option key={name} value={name}>{name}</option>)}
-                        </select>
-                        <button 
-                            onClick={downloadTeacherSchedulePDF}
-                            disabled={!selectedTeacherId}
-                            className="bg-red-600 text-white p-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Download PDF"
-                        >
-                            <FileText size={20} />
-                        </button>
-                    </div>
-                </div>
-
-                {selectedTeacherId ? (
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-white">
-                                <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-32">Hari</th>
-                                    {/* Jam 1 - 8 (Max jam seems to be 8 based on constants) */}
-                                    {[1, 2, 3, 4, 5, 6, 7, 8].map(j => (
-                                        <th key={j} className="px-2 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider border-l border-gray-100">
-                                            {j}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {SCHEDULE_DATA.map(day => {
-                                    // Check if teacher teaches on this day to highlight row or something?
-                                    // We will just render the grid.
-                                    return (
-                                        <tr key={day.day} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 bg-gray-50">
-                                                {day.day}
-                                            </td>
-                                            {[1, 2, 3, 4, 5, 6, 7, 8].map(jam => {
-                                                const jamStr = String(jam);
-                                                // Find the schedule row for this jam
-                                                const rowData = day.rows.find(r => r.jam === jamStr);
-                                                
-                                                let cellContent: React.ReactNode = <span className="text-gray-200">-</span>;
-                                                let cellClass = "";
-
-                                                if (rowData && !rowData.activity) {
-                                                    // Search across all CLASSES to see if this teacher is teaching anywhere at this time
-                                                    let teachingClass = null;
-                                                    let subject = null;
-
-                                                    for (const cls of CLASSES) {
-                                                        const key = `${day.day}-${jamStr}-${cls}`;
-                                                        const code = scheduleMap[key];
-                                                        if (code) {
-                                                            const info = codeToDataMap[code];
-                                                            if (info && info.name === selectedTeacherId) {
-                                                                teachingClass = cls;
-                                                                subject = info.subject;
-                                                                break; 
-                                                            }
-                                                        }
-                                                    }
-
-                                                    if (teachingClass) {
-                                                        cellContent = (
-                                                            <div className="flex flex-col items-center justify-center h-full">
-                                                                <span className="text-sm font-bold text-emerald-700">{teachingClass}</span>
-                                                                <span className="text-[10px] text-gray-500 leading-tight text-center">{subject}</span>
-                                                            </div>
-                                                        );
-                                                        cellClass = "bg-emerald-50 border-emerald-100";
-                                                    }
-                                                } else if (rowData && rowData.activity) {
-                                                    // Break time or activity
-                                                    // Typically we merge cells for breaks, but in this grid view we might just gray it out
-                                                    cellClass = "bg-gray-100";
-                                                }
-
-                                                return (
-                                                    <td key={jam} className={`px-2 py-2 border-l border-gray-100 text-center h-16 w-24 ${cellClass}`}>
-                                                        {cellContent}
-                                                    </td>
-                                                );
-                                            })}
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                ) : (
-                    <div className="p-12 text-center text-gray-400 flex flex-col items-center">
-                        <Search size={48} className="mb-4 opacity-20" />
-                        <p>Silakan pilih nama guru untuk melihat jadwal mengajarnya.</p>
-                    </div>
-                )}
-            </div>
-        )}
-
-        {/* Tab Content: Jurnal Mengajar */}
-        {activeTab === 'JOURNAL' && renderJournalTab()}
-
-        {/* Tab Content: Monitoring Absensi */}
-        {activeTab === 'MONITORING' && renderAttendanceMonitoring()}
-
-        {/* Tab Content: Nilai Siswa */}
-        {activeTab === 'GRADES' && renderGradesTab()}
-
-        {/* Tab Content: Catatan Wali Kelas */}
-        {activeTab === 'HOMEROOM' && renderHomeroomTab()}
+         {activeTab === 'JOURNAL' && renderJournalTab()}
+         {activeTab === 'MONITORING' && renderAttendanceMonitoring()}
+         {activeTab === 'GRADES' && renderGradesTab()}
+         {activeTab === 'HOMEROOM' && renderHomeroomTab()}
+      </div>
     </div>
   );
 };

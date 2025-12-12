@@ -1,3 +1,4 @@
+
 export interface ClassHours {
   A?: number;
   B?: number;
@@ -26,7 +27,13 @@ export enum ViewMode {
   TABLE = 'TABLE',
   SCHEDULE = 'SCHEDULE',
   VIEW_SCHEDULES = 'VIEW_SCHEDULES',
-  SETTINGS = 'SETTINGS'
+  CLASS_SCHEDULE = 'CLASS_SCHEDULE',
+  TEACHER_SCHEDULE = 'TEACHER_SCHEDULE',
+  SETTINGS = 'SETTINGS',
+  JOURNAL = 'JOURNAL',
+  MONITORING = 'MONITORING',
+  GRADES = 'GRADES',
+  HOMEROOM = 'HOMEROOM'
 }
 
 export type UserRole = 'ADMIN' | 'TEACHER' | 'STUDENT' | null;
