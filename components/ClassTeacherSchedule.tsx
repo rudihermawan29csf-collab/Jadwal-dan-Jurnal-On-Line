@@ -2,14 +2,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Download, FileText, FileSpreadsheet, Save, Info, Trash2, 
   PenTool, BookOpen, Plus, X, List, Edit2, Filter, ChevronDown,
-  User, Users, Calendar, Layout, Search, GraduationCap
+  User, Users, Calendar, Layout, Search, GraduationCap, ClipboardList
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { 
   TeacherData, AppSettings, CalendarEvent, TeacherLeave, 
-  TeachingMaterial, TeachingJournal, Student, UserRole, GradeRecord 
+  TeachingMaterial, TeachingJournal, Student, UserRole, GradeRecord, HomeroomRecord 
 } from '../types';
 import { CLASSES, SCHEDULE_DATA, COLOR_PALETTE } from '../constants';
 
@@ -31,9 +31,13 @@ interface ClassTeacherScheduleProps {
   onDeleteJournal?: (id: string) => void;
   studentGrades?: GradeRecord[];
   onUpdateGrade?: (grade: GradeRecord) => void;
+  homeroomRecords?: HomeroomRecord[];
+  onAddHomeroomRecord?: (record: HomeroomRecord) => void;
+  onEditHomeroomRecord?: (record: HomeroomRecord) => void;
+  onDeleteHomeroomRecord?: (id: string) => void;
 }
 
-type TabMode = 'CLASS' | 'TEACHER' | 'JOURNAL' | 'MONITORING' | 'GRADES';
+type TabMode = 'CLASS' | 'TEACHER' | 'JOURNAL' | 'MONITORING' | 'GRADES' | 'HOMEROOM';
 type AttendanceStatus = 'HADIR' | 'TIDAK_HADIR' | 'DINAS_LUAR';
 type AttendanceRecord = Record<string, AttendanceStatus>;
 
@@ -54,7 +58,11 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   onEditJournal,
   onDeleteJournal,
   studentGrades = [],
-  onUpdateGrade
+  onUpdateGrade,
+  homeroomRecords = [],
+  onAddHomeroomRecord,
+  onEditHomeroomRecord,
+  onDeleteHomeroomRecord
 }) => {
   const [activeTab, setActiveTab] = useState<TabMode>('CLASS');
 
@@ -108,6 +116,26 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   const [gradeYear, setGradeYear] = useState<string>(appSettings.academicYear);
   const [gradeSemester, setGradeSemester] = useState<string>(appSettings.semester);
 
+  // Homeroom States
+  const [homeroomForm, setHomeroomForm] = useState<{
+    date: string;
+    className: string;
+    studentId: string;
+    violationType: string;
+    solution: string;
+    notes: string;
+  }>({
+    date: new Date().toISOString().split('T')[0],
+    className: CLASSES[0],
+    studentId: '',
+    violationType: '',
+    solution: '',
+    notes: ''
+  });
+  const [editingHomeroomId, setEditingHomeroomId] = useState<string | null>(null);
+  const [isHomeroomDownloadOpen, setIsHomeroomDownloadOpen] = useState(false);
+  const homeroomDownloadRef = useRef<HTMLDivElement>(null);
+
   // Dropdown UI States
   const [isMonitoringDownloadOpen, setIsMonitoringDownloadOpen] = useState(false);
   const monitoringDownloadRef = useRef<HTMLDivElement>(null);
@@ -129,6 +157,9 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
         }
         if (gradesDownloadRef.current && !gradesDownloadRef.current.contains(event.target as Node)) {
             setIsGradesDownloadOpen(false);
+        }
+        if (homeroomDownloadRef.current && !homeroomDownloadRef.current.contains(event.target as Node)) {
+            setIsHomeroomDownloadOpen(false);
         }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -582,6 +613,303 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
     ];
     XLSX.writeFile(wb, `Jurnal_Mengajar_${currentUser?.replace(' ', '_')}.xlsx`);
     setIsJournalDownloadOpen(false);
+  };
+
+  // --- HOMEROOM HANDLERS ---
+  const handleHomeroomSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onAddHomeroomRecord || !onEditHomeroomRecord || !currentUser) return;
+
+    if (editingHomeroomId) {
+        onEditHomeroomRecord({
+            id: editingHomeroomId,
+            teacherName: currentUser,
+            ...homeroomForm
+        });
+        setEditingHomeroomId(null);
+        alert("Catatan berhasil diperbarui!");
+    } else {
+        onAddHomeroomRecord({
+            id: Date.now().toString(),
+            teacherName: currentUser,
+            ...homeroomForm
+        });
+        alert("Catatan berhasil ditambahkan!");
+    }
+    setHomeroomForm({
+        date: new Date().toISOString().split('T')[0],
+        className: CLASSES[0],
+        studentId: '',
+        violationType: '',
+        solution: '',
+        notes: ''
+    });
+  };
+
+  const handleEditHomeroomClick = (record: HomeroomRecord) => {
+    setEditingHomeroomId(record.id);
+    setHomeroomForm({
+        date: record.date,
+        className: record.className,
+        studentId: record.studentId,
+        violationType: record.violationType,
+        solution: record.solution,
+        notes: record.notes
+    });
+  };
+
+  const downloadHomeroomPDF = (format: 'a4' | 'f4') => {
+    const formatSize = format === 'a4' ? 'a4' : [330, 215];
+    const doc = new jsPDF('l', 'mm', formatSize as any);
+    
+    doc.setFontSize(14);
+    doc.text(`Catatan Wali Kelas`, 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Wali Kelas: ${currentUser}`, 14, 21);
+    doc.text(`Semester ${appSettings.semester} Tahun Ajaran ${appSettings.academicYear}`, 14, 26);
+
+    const records = homeroomRecords.filter(r => r.teacherName === currentUser);
+    const tableBody = records.map((r, idx) => {
+        const student = students.find(s => s.id === r.studentId);
+        return [
+            idx + 1,
+            r.date,
+            r.className,
+            student ? student.name : '-',
+            r.violationType,
+            r.solution,
+            r.notes
+        ];
+    });
+
+    autoTable(doc, {
+        startY: 30,
+        head: [['No', 'Tanggal', 'Kelas', 'Nama Siswa', 'Jenis Pelanggaran', 'Solusi Penanganan', 'Keterangan']],
+        body: tableBody,
+        theme: 'grid',
+        headStyles: { fillColor: [79, 70, 229] },
+        styles: { fontSize: 8, cellPadding: 1.5 },
+        columnStyles: {
+            0: { cellWidth: 8 },
+            1: { cellWidth: 22 },
+            2: { cellWidth: 15 },
+            3: { cellWidth: 40 },
+            4: { cellWidth: 40 },
+            5: { cellWidth: 40 }
+        }
+    });
+
+    const pageHeight = doc.internal.pageSize.height;
+    let finalY = (doc as any).lastAutoTable.finalY + 10;
+    if (finalY + 40 > pageHeight) {
+        doc.addPage();
+        finalY = 20;
+    }
+
+    doc.setFontSize(10);
+    const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    const pageWidth = doc.internal.pageSize.width;
+    
+    doc.text(`Mojokerto, ${dateStr}`, pageWidth - 50, finalY, { align: 'center' });
+    doc.text('Wali Kelas', pageWidth - 50, finalY + 5, { align: 'center' });
+    doc.text(currentUser || '....................', pageWidth - 50, finalY + 30, { align: 'center' });
+    
+    const myData = teacherData.find(t => t.name === currentUser);
+    doc.text(`NIP. ${myData?.nip || '-'}`, pageWidth - 50, finalY + 35, { align: 'center' });
+
+    doc.text('Mengetahui,', 40, finalY);
+    doc.text('Kepala SMPN 3 Pacet', 40, finalY + 5);
+    doc.text(appSettings.headmaster || '.........................', 40, finalY + 30);
+    doc.text(`NIP. ${appSettings.headmasterNip || '................'}`, 40, finalY + 35);
+
+    doc.save(`Catatan_Wali_Kelas_${currentUser}.pdf`);
+    setIsHomeroomDownloadOpen(false);
+  };
+
+  const downloadHomeroomExcel = () => {
+    const records = homeroomRecords.filter(r => r.teacherName === currentUser);
+    const data = records.map((r, idx) => {
+        const student = students.find(s => s.id === r.studentId);
+        return {
+            'No': idx + 1,
+            'Tanggal': r.date,
+            'Kelas': r.className,
+            'Nama Siswa': student ? student.name : '-',
+            'Jenis Pelanggaran': r.violationType,
+            'Solusi Penanganan': r.solution,
+            'Keterangan': r.notes
+        };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Catatan Wali Kelas");
+    ws['!cols'] = [
+        { wch: 5 }, { wch: 15 }, { wch: 10 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }
+    ];
+    XLSX.writeFile(wb, `Catatan_Wali_Kelas_${currentUser}.xlsx`);
+    setIsHomeroomDownloadOpen(false);
+  };
+
+  const renderHomeroomTab = () => {
+    // Filter students based on selected class in form
+    const classStudents = students.filter(s => s.className === homeroomForm.className);
+    const myRecords = homeroomRecords.filter(r => r.teacherName === currentUser);
+
+    return (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+            {/* Input Form */}
+            <div className="lg:col-span-1 bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-fit">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><PenTool size={18} /> {editingHomeroomId ? 'Edit Catatan' : 'Input Catatan'}</h3>
+                <form onSubmit={handleHomeroomSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Tanggal</label>
+                        <input 
+                            type="date" 
+                            required
+                            value={homeroomForm.date}
+                            onChange={(e) => setHomeroomForm({...homeroomForm, date: e.target.value})}
+                            className="w-full border rounded px-3 py-2 text-sm"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Kelas</label>
+                        <select 
+                            value={homeroomForm.className}
+                            onChange={(e) => setHomeroomForm({...homeroomForm, className: e.target.value, studentId: ''})}
+                            className="w-full border rounded px-3 py-2 text-sm"
+                        >
+                            {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Nama Siswa</label>
+                        <select 
+                            value={homeroomForm.studentId}
+                            onChange={(e) => setHomeroomForm({...homeroomForm, studentId: e.target.value})}
+                            className="w-full border rounded px-3 py-2 text-sm"
+                            required
+                        >
+                            <option value="">-- Pilih Siswa --</option>
+                            {classStudents.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Jenis Pelanggaran / Masalah</label>
+                        <input 
+                            type="text" 
+                            required
+                            value={homeroomForm.violationType}
+                            onChange={(e) => setHomeroomForm({...homeroomForm, violationType: e.target.value})}
+                            placeholder="Contoh: Terlambat, Tidak Pakai Atribut"
+                            className="w-full border rounded px-3 py-2 text-sm"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Solusi Penanganan</label>
+                        <textarea 
+                            required
+                            value={homeroomForm.solution}
+                            onChange={(e) => setHomeroomForm({...homeroomForm, solution: e.target.value})}
+                            className="w-full border rounded px-3 py-2 text-sm h-20"
+                            placeholder="Tindakan yang diambil..."
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Keterangan</label>
+                        <textarea 
+                            value={homeroomForm.notes}
+                            onChange={(e) => setHomeroomForm({...homeroomForm, notes: e.target.value})}
+                            className="w-full border rounded px-3 py-2 text-sm h-16"
+                            placeholder="Catatan tambahan..."
+                        />
+                    </div>
+                    <div className="flex gap-2">
+                        {editingHomeroomId && (
+                            <button 
+                                type="button" 
+                                onClick={() => { setEditingHomeroomId(null); setHomeroomForm({...homeroomForm, studentId: '', violationType: '', solution: '', notes: ''}) }}
+                                className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg font-bold text-sm"
+                            >
+                                Batal
+                            </button>
+                        )}
+                        <button type="submit" className="flex-[2] py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 shadow-sm">
+                            {editingHomeroomId ? 'Simpan Perubahan' : 'Simpan Catatan'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            {/* List Table */}
+            <div className="lg:col-span-2 space-y-4">
+                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center">
+                    <h3 className="font-bold text-gray-800">Riwayat Catatan</h3>
+                    <div className="relative" ref={homeroomDownloadRef}>
+                        <button 
+                            onClick={() => setIsHomeroomDownloadOpen(!isHomeroomDownloadOpen)}
+                            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50 transition-colors"
+                        >
+                            <Download size={16} /> Download
+                            <ChevronDown size={14} className={`transition-transform duration-200 ${isHomeroomDownloadOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                        {isHomeroomDownloadOpen && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20 animate-fade-in">
+                                <button onClick={() => downloadHomeroomPDF('a4')} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 border-b border-gray-100">
+                                    <FileText size={16} className="text-red-600"/> PDF (A4)
+                                </button>
+                                <button onClick={() => downloadHomeroomPDF('f4')} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 border-b border-gray-100">
+                                    <FileText size={16} className="text-red-600"/> PDF (F4/Folio)
+                                </button>
+                                <button onClick={downloadHomeroomExcel} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700">
+                                    <FileSpreadsheet size={16} className="text-green-600"/> Excel
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left font-bold text-gray-600 w-24">Tanggal</th>
+                                    <th className="px-4 py-3 text-left font-bold text-gray-600 w-16">Kelas</th>
+                                    <th className="px-4 py-3 text-left font-bold text-gray-600">Nama Siswa</th>
+                                    <th className="px-4 py-3 text-left font-bold text-gray-600">Pelanggaran</th>
+                                    <th className="px-4 py-3 text-left font-bold text-gray-600">Solusi</th>
+                                    <th className="px-4 py-3 text-center font-bold text-gray-600 w-20">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                                {myRecords.length > 0 ? myRecords.map(r => {
+                                    const student = students.find(s => s.id === r.studentId);
+                                    return (
+                                        <tr key={r.id} className="hover:bg-gray-50">
+                                            <td className="px-4 py-3 whitespace-nowrap">{r.date}</td>
+                                            <td className="px-4 py-3 font-bold text-indigo-600">{r.className}</td>
+                                            <td className="px-4 py-3 font-medium">{student ? student.name : '-'}</td>
+                                            <td className="px-4 py-3 text-red-600">{r.violationType}</td>
+                                            <td className="px-4 py-3 text-gray-600 truncate max-w-xs">{r.solution}</td>
+                                            <td className="px-4 py-3 text-center flex justify-center gap-2">
+                                                <button onClick={() => handleEditHomeroomClick(r)} className="text-blue-500 hover:bg-blue-50 p-1 rounded"><Edit2 size={16}/></button>
+                                                <button onClick={() => onDeleteHomeroomRecord && onDeleteHomeroomRecord(r.id)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={16}/></button>
+                                            </td>
+                                        </tr>
+                                    );
+                                }) : (
+                                    <tr>
+                                        <td colSpan={6} className="px-4 py-8 text-center text-gray-400">Belum ada catatan wali kelas.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
   };
 
   const renderAttendanceMonitoring = () => {
@@ -1627,6 +1955,17 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                     <GraduationCap size={18} />
                     Nilai Siswa
                 </button>
+                <button
+                    onClick={() => setActiveTab('HOMEROOM')}
+                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-bold transition-all ${
+                        activeTab === 'HOMEROOM' 
+                        ? 'bg-indigo-600 text-white shadow-md' 
+                        : 'bg-transparent text-gray-600 hover:bg-gray-100'
+                    }`}
+                >
+                    <ClipboardList size={18} />
+                    Catatan Wali Kelas
+                </button>
                 </>
             )}
         </div>
@@ -1678,7 +2017,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                                     {daySchedule.rows.map((row, rowIdx) => {
                                         const key = `${daySchedule.day}-${row.jam}-${selectedClass}`;
                                         const code = scheduleMap[key];
-                                        const info = code ? codeToDataMap[code] : null;
+                                        const info = code ? codeToDataMap[String(code)] : null;
                                         const isFirstRow = rowIdx === 0;
                                         
                                         if (row.activity) {
@@ -1856,6 +2195,9 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
 
         {/* Tab Content: Nilai Siswa */}
         {activeTab === 'GRADES' && renderGradesTab()}
+
+        {/* Tab Content: Catatan Wali Kelas */}
+        {activeTab === 'HOMEROOM' && renderHomeroomTab()}
     </div>
   );
 };

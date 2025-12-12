@@ -1,5 +1,3 @@
-
-
 export interface ClassHours {
   A?: number;
   B?: number;
@@ -126,6 +124,18 @@ export interface GradeRecord {
   sts?: number;
   sas?: number;
   finalGrade?: number;
+}
+
+// --- HOMEROOM RECORD INTERFACE ---
+export interface HomeroomRecord {
+  id: string;
+  teacherName: string; // Wali Kelas (Logged in teacher)
+  date: string;
+  className: string;
+  studentId: string;
+  violationType: string; // Jenis Pelanggaran / Permasalahan
+  solution: string; // Tindak Lanjut / Solusi
+  notes: string; // Keterangan
 }
 
 export interface SettingsPanelProps {

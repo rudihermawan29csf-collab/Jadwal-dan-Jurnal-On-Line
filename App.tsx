@@ -5,7 +5,7 @@ import GeminiAssistant from './components/GeminiAssistant';
 import ClassTeacherSchedule from './components/ClassTeacherSchedule';
 import LoginPage from './components/LoginPage';
 import SettingsPanel from './components/SettingsPanel';
-import { ViewMode, TeacherData, UserRole, AppSettings, AuthSettings, CalendarEvent, TeacherLeave, TeachingMaterial, TeachingJournal, Student, GradeRecord } from './types';
+import { ViewMode, TeacherData, UserRole, AppSettings, AuthSettings, CalendarEvent, TeacherLeave, TeachingMaterial, TeachingJournal, Student, GradeRecord, HomeroomRecord } from './types';
 import { TEACHER_DATA as INITIAL_DATA, INITIAL_STUDENTS } from './constants';
 import { Table as TableIcon, Search, Calendar, Ban, CalendarClock, Settings, Menu, LogOut, ChevronDown } from 'lucide-react';
 
@@ -142,6 +142,16 @@ const App: React.FC = () => {
     }
   });
 
+  // --- HOMEROOM STATES ---
+  const [homeroomRecords, setHomeroomRecords] = useState<HomeroomRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('homeroomRecords');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   // --- UI STATES ---
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -190,6 +200,10 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('studentGrades', JSON.stringify(studentGrades));
   }, [studentGrades]);
+
+  useEffect(() => {
+    localStorage.setItem('homeroomRecords', JSON.stringify(homeroomRecords));
+  }, [homeroomRecords]);
 
 
   // Close menu on click outside
@@ -330,6 +344,19 @@ const App: React.FC = () => {
         return [...prev, grade];
       }
     });
+  };
+
+  // --- Homeroom Handlers ---
+  const handleAddHomeroomRecord = (record: HomeroomRecord) => {
+    setHomeroomRecords(prev => [...prev, record]);
+  };
+
+  const handleEditHomeroomRecord = (updatedRecord: HomeroomRecord) => {
+    setHomeroomRecords(prev => prev.map(r => r.id === updatedRecord.id ? updatedRecord : r));
+  };
+
+  const handleDeleteHomeroomRecord = (id: string) => {
+    setHomeroomRecords(prev => prev.filter(r => r.id !== id));
   };
 
   // --- RENDER LOGIN ---
@@ -523,6 +550,11 @@ const App: React.FC = () => {
                // Grades Props
                studentGrades={studentGrades}
                onUpdateGrade={handleUpdateGrade}
+               // Homeroom Props
+               homeroomRecords={homeroomRecords}
+               onAddHomeroomRecord={handleAddHomeroomRecord}
+               onEditHomeroomRecord={handleEditHomeroomRecord}
+               onDeleteHomeroomRecord={handleDeleteHomeroomRecord}
              />
           )}
           {viewMode === ViewMode.SETTINGS && userRole === 'ADMIN' && (
