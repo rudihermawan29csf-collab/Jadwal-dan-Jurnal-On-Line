@@ -96,12 +96,14 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   // Monitoring States
   const [monitoringClass, setMonitoringClass] = useState<string>(CLASSES[0]);
   const [monitoringSemester, setMonitoringSemester] = useState<string>(appSettings.semester);
+  const [monitoringPrintDate, setMonitoringPrintDate] = useState<string>(new Date().toISOString().split('T')[0]);
   
   // Grade States
   const [gradeClass, setGradeClass] = useState<string>(CLASSES[0]);
   const [gradeSubject, setGradeSubject] = useState<string>('');
   const [gradeYear, setGradeYear] = useState<string>(appSettings.academicYear);
   const [gradeSemester, setGradeSemester] = useState<string>(appSettings.semester);
+  const [gradesPrintDate, setGradesPrintDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   // Homeroom States
   const [homeroomForm, setHomeroomForm] = useState<{
@@ -122,6 +124,10 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   const [editingHomeroomId, setEditingHomeroomId] = useState<string | null>(null);
   const [isHomeroomDownloadOpen, setIsHomeroomDownloadOpen] = useState(false);
   const homeroomDownloadRef = useRef<HTMLDivElement>(null);
+  // Homeroom Filter & Print States
+  const [homeroomDateFrom, setHomeroomDateFrom] = useState<string>('');
+  const [homeroomDateTo, setHomeroomDateTo] = useState<string>('');
+  const [homeroomPrintDate, setHomeroomPrintDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   // UI States
   const [isMonitoringDownloadOpen, setIsMonitoringDownloadOpen] = useState(false);
@@ -183,7 +189,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   };
 
   // Helper for adding signatures to PDF
-  const addSignatureToPDF = (doc: jsPDF, roleLabel: string = "Guru Mata Pelajaran") => {
+  const addSignatureToPDF = (doc: jsPDF, dateStr: string, roleLabel: string = "Guru Mata Pelajaran") => {
     const pageHeight = doc.internal.pageSize.height;
     const pageWidth = doc.internal.pageSize.width;
     let finalY = (doc as any).lastAutoTable.finalY + 10;
@@ -199,7 +205,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
 
     doc.setFontSize(10);
     // Date
-    doc.text(`Mojokerto, ${new Date(printDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}`, rightMargin, finalY, { align: 'center' });
+    doc.text(`Mojokerto, ${new Date(dateStr).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}`, rightMargin, finalY, { align: 'center' });
     
     // Titles
     doc.text(`Mengetahui,`, leftMargin, finalY + 5);
@@ -470,7 +476,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
         } 
     });
 
-    addSignatureToPDF(doc, "Guru Mata Pelajaran");
+    addSignatureToPDF(doc, printDate, "Guru Mata Pelajaran");
 
     doc.save(`Jurnal_Mengajar_${currentUser?.replace(' ', '_')}.pdf`); setIsJournalDownloadOpen(false);
   };
@@ -553,7 +559,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
         }
     });
 
-    addSignatureToPDF(doc, "Guru Mata Pelajaran / Wali Kelas");
+    addSignatureToPDF(doc, monitoringPrintDate, "Guru Mata Pelajaran / Wali Kelas");
 
     doc.save(`Rekap_Absensi_${monitoringClass.replace(' ', '_')}_${monitoringSemester}.pdf`);
     setIsMonitoringDownloadOpen(false);
@@ -611,16 +617,27 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                         </select>
                     </div>
                 </div>
-                <div className="relative" ref={monitoringDownloadRef}>
-                     <button onClick={() => setIsMonitoringDownloadOpen(!isMonitoringDownloadOpen)} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50">
-                        <Download size={16}/> Download Rekap <ChevronDown size={14}/>
-                     </button>
-                     {isMonitoringDownloadOpen && (
-                        <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20">
-                            <button onClick={downloadAttendanceRecapPDF} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF</button>
-                            <button onClick={downloadAttendanceRecapExcel} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Excel</button>
-                        </div>
-                     )}
+                <div className="flex items-end gap-2">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Tanggal Cetak</label>
+                        <input 
+                            type="date" 
+                            value={monitoringPrintDate}
+                            onChange={(e) => setMonitoringPrintDate(e.target.value)}
+                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                        />
+                    </div>
+                    <div className="relative" ref={monitoringDownloadRef}>
+                        <button onClick={() => setIsMonitoringDownloadOpen(!isMonitoringDownloadOpen)} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50">
+                            <Download size={16}/> Download Rekap <ChevronDown size={14}/>
+                        </button>
+                        {isMonitoringDownloadOpen && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20">
+                                <button onClick={downloadAttendanceRecapPDF} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF</button>
+                                <button onClick={downloadAttendanceRecapExcel} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Excel</button>
+                            </div>
+                        )}
+                    </div>
                 </div>
              </div>
 
@@ -705,7 +722,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
             }
         });
 
-        addSignatureToPDF(doc, "Guru Mata Pelajaran");
+        addSignatureToPDF(doc, gradesPrintDate, "Guru Mata Pelajaran");
         doc.save(`Nilai_${gradeClass}_${gradeSubject}.pdf`);
         setIsGradesDownloadOpen(false);
     };
@@ -790,17 +807,28 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                     <div><label className="block text-xs font-bold text-gray-600 mb-1">Kelas</label><select value={gradeClass} onChange={(e) => setGradeClass(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm w-24">{CLASSES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
                     <div><label className="block text-xs font-bold text-gray-600 mb-1">Semester</label><select value={gradeSemester} onChange={(e) => setGradeSemester(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm w-24"><option value="Ganjil">Ganjil</option><option value="Genap">Genap</option></select></div>
                 </div>
-                <div className="relative" ref={gradesDownloadRef}>
-                     <button onClick={() => setIsGradesDownloadOpen(!isGradesDownloadOpen)} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50">
-                        <Download size={16}/> Download Rekap <ChevronDown size={14}/>
-                     </button>
-                     {isGradesDownloadOpen && (
-                        <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20">
-                            <button onClick={() => downloadGradesPDF('a4')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF (A4)</button>
-                            <button onClick={() => downloadGradesPDF('f4')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF (F4)</button>
-                            <button onClick={downloadGradesExcel} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Excel</button>
-                        </div>
-                     )}
+                <div className="flex items-end gap-2">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Tanggal Cetak</label>
+                        <input 
+                            type="date" 
+                            value={gradesPrintDate}
+                            onChange={(e) => setGradesPrintDate(e.target.value)}
+                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                        />
+                    </div>
+                    <div className="relative" ref={gradesDownloadRef}>
+                        <button onClick={() => setIsGradesDownloadOpen(!isGradesDownloadOpen)} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50">
+                            <Download size={16}/> Download Rekap <ChevronDown size={14}/>
+                        </button>
+                        {isGradesDownloadOpen && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20">
+                                <button onClick={() => downloadGradesPDF('a4')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF (A4)</button>
+                                <button onClick={() => downloadGradesPDF('f4')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF (F4)</button>
+                                <button onClick={downloadGradesExcel} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Excel</button>
+                            </div>
+                        )}
+                    </div>
                 </div>
              </div>
              <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
@@ -850,7 +878,14 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
 
   const renderHomeroomTab = () => {
     const studentsInClass = useMemo(() => students.filter(s => s.className === homeroomForm.className), [students, homeroomForm.className]);
-    const myHomeroomRecords = useMemo(() => homeroomRecords.filter(r => r.teacherName === currentUser).sort((a,b) => b.date.localeCompare(a.date)), [homeroomRecords, currentUser]);
+    
+    // Filter records
+    const myHomeroomRecords = useMemo(() => {
+        let records = homeroomRecords.filter(r => r.teacherName === currentUser);
+        if (homeroomDateFrom) records = records.filter(r => r.date >= homeroomDateFrom);
+        if (homeroomDateTo) records = records.filter(r => r.date <= homeroomDateTo);
+        return records.sort((a,b) => b.date.localeCompare(a.date));
+    }, [homeroomRecords, currentUser, homeroomDateFrom, homeroomDateTo]);
 
     // DOWNLOAD HOMEROOM PDF
     const downloadHomeroomPDF = (format: 'a4' | 'f4') => {
@@ -886,7 +921,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
             }
         });
 
-        addSignatureToPDF(doc, "Wali Kelas");
+        addSignatureToPDF(doc, homeroomPrintDate, "Wali Kelas");
         doc.save(`Catatan_Wali_Kelas_${currentUser.replace(' ', '_')}.pdf`);
         setIsHomeroomDownloadOpen(false);
     };
@@ -953,19 +988,33 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
             </div>
             
             <div className="lg:col-span-2 space-y-4">
-               <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center">
+               <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                   <h3 className="font-bold text-gray-800">Riwayat Catatan Wali Kelas</h3>
-                  <div className="relative" ref={homeroomDownloadRef}>
-                     <button onClick={() => setIsHomeroomDownloadOpen(!isHomeroomDownloadOpen)} className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50">
-                        <Download size={16}/> Download Rekap <ChevronDown size={14}/>
-                     </button>
-                     {isHomeroomDownloadOpen && (
-                        <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20">
-                            <button onClick={() => downloadHomeroomPDF('a4')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF (A4)</button>
-                            <button onClick={() => downloadHomeroomPDF('f4')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF (F4)</button>
-                            <button onClick={downloadHomeroomExcel} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Excel</button>
-                        </div>
-                     )}
+                  <div className="flex flex-col md:flex-row gap-4 items-start md:items-end w-full md:w-auto">
+                      <div className="flex flex-col gap-1">
+                         <span className="text-xs font-bold text-gray-600">Filter Tanggal:</span>
+                         <div className="flex items-center gap-2">
+                             <input type="date" value={homeroomDateFrom} onChange={(e) => setHomeroomDateFrom(e.target.value)} className="border rounded px-2 py-1 text-xs" />
+                             <span className="text-gray-400">-</span>
+                             <input type="date" value={homeroomDateTo} onChange={(e) => setHomeroomDateTo(e.target.value)} className="border rounded px-2 py-1 text-xs" />
+                         </div>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                         <span className="text-xs font-bold text-gray-600">Tanggal Cetak:</span>
+                         <input type="date" value={homeroomPrintDate} onChange={(e) => setHomeroomPrintDate(e.target.value)} className="text-xs border rounded px-2 py-1" />
+                      </div>
+                      <div className="relative" ref={homeroomDownloadRef}>
+                         <button onClick={() => setIsHomeroomDownloadOpen(!isHomeroomDownloadOpen)} className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50">
+                            <Download size={16}/> Download <ChevronDown size={14}/>
+                         </button>
+                         {isHomeroomDownloadOpen && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-20">
+                                <button onClick={() => downloadHomeroomPDF('a4')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF (A4)</button>
+                                <button onClick={() => downloadHomeroomPDF('f4')} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">PDF (F4)</button>
+                                <button onClick={downloadHomeroomExcel} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Excel</button>
+                            </div>
+                         )}
+                      </div>
                   </div>
                </div>
                <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
@@ -990,7 +1039,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                                </tr>
                              )
                            })}
-                           {myHomeroomRecords.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Belum ada catatan.</td></tr>}
+                           {myHomeroomRecords.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Belum ada catatan{homeroomDateFrom ? ' pada rentang tanggal ini' : ''}.</td></tr>}
                         </tbody>
                      </table>
                   </div>
