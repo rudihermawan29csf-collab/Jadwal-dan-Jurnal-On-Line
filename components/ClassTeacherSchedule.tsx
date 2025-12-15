@@ -249,26 +249,68 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
     if (!selectedTeacherId) return;
     const doc = new jsPDF('p', 'mm', 'a4');
     // Cari nama guru berdasarkan ID
-    const teacherName = teacherData.find(t => String(t.id) === selectedTeacherId)?.name || selectedTeacherId;
+    const selectedTeacher = teacherData.find(t => String(t.id) === selectedTeacherId);
+    const teacherName = selectedTeacher?.name || selectedTeacherId;
 
     doc.setFontSize(14); doc.text(`Jadwal Mengajar: ${teacherName}`, 14, 15);
     doc.setFontSize(10); doc.text(`SMPN 3 Pacet - Semester ${appSettings.semester} ${appSettings.academicYear}`, 14, 21);
-    let counter = 1; const tableBody: any[] = [];
-    const myCodes = teacherData.filter(t => String(t.id) === selectedTeacherId).map(t => t.code);
+    
+    // Get all codes for this teacher name (handle multi-subject teachers)
+    const myCodes = teacherData.filter(t => t.name === teacherName).map(t => t.code);
+
+    let finalY = 25;
     SCHEDULE_DATA.forEach(day => {
-       day.rows.forEach(row => {
-          if (row.activity) return;
-          CLASSES.forEach(cls => {
-             const key = `${day.day}-${row.jam}-${cls}`;
-             const scheduledCode = scheduleMap[key];
-             if (scheduledCode && myCodes.includes(scheduledCode)) {
-                const info = codeToDataMap[String(scheduledCode)];
-                tableBody.push([counter++, row.jam, row.waktu, day.day, cls, scheduledCode, info?.subject || '-']);
-             }
-          });
-       });
+        if (finalY > 250) {
+            doc.addPage();
+            finalY = 15;
+        }
+        
+        doc.setFontSize(11);
+        doc.setTextColor(79, 70, 229);
+        doc.text(`HARI: ${day.day}`, 14, finalY + 5);
+
+        const tableBody: any[] = [];
+        
+        day.rows.forEach(row => {
+            if (row.activity) {
+               tableBody.push([
+                  row.jam, 
+                  row.waktu, 
+                  { content: row.activity, colSpan: 2, styles: { fillColor: [255, 237, 213], halign: 'center', textColor: [154, 52, 18] } }
+               ]);
+               return;
+            }
+
+            const teachingClasses: string[] = [];
+            CLASSES.forEach(cls => {
+                const key = `${day.day}-${row.jam}-${cls}`;
+                const code = scheduleMap[key];
+                if (code && myCodes.includes(code)) {
+                    // Find which code it matches to display subject correctly if multiple
+                    const info = codeToDataMap[code];
+                    teachingClasses.push(`${cls} (${info?.subject})`);
+                }
+            });
+
+            if (teachingClasses.length > 0) {
+                tableBody.push([row.jam, row.waktu, teachingClasses.join(', '), '']);
+            } else {
+                tableBody.push([row.jam, row.waktu, '-', '']);
+            }
+        });
+
+        autoTable(doc, { 
+            startY: finalY + 8, 
+            head: [['Jam', 'Waktu', 'Kelas & Mapel']], 
+            body: tableBody, 
+            theme: 'grid', 
+            styles: { fontSize: 9 },
+            columnStyles: { 0: { cellWidth: 15 }, 1: { cellWidth: 30 } }
+        });
+        
+        finalY = (doc as any).lastAutoTable.finalY + 10;
     });
-    autoTable(doc, { startY: 25, head: [['No', 'Jam Ke', 'Waktu', 'Hari', 'Kelas', 'Kode', 'Mata Pelajaran']], body: tableBody, theme: 'grid', styles: { fontSize: 9 } });
+
     doc.save(`Jadwal_Guru_${teacherName.replace(' ', '_')}.pdf`);
   };
 
@@ -1400,12 +1442,72 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                {selectedTeacherId ? (
                    <div className="overflow-x-auto border rounded-xl shadow-sm">
                       <table className="min-w-full divide-y divide-gray-200 text-sm">
-                         <thead className="bg-emerald-700 text-white"><tr><th className="px-4 py-3 text-left w-32">Hari</th><th className="px-4 py-3 text-center w-24">Jam</th><th className="px-4 py-3 text-center w-32">Waktu</th><th className="px-4 py-3 text-center w-24">Kelas</th><th className="px-4 py-3 text-left">Mata Pelajaran</th></tr></thead>
+                         <thead className="bg-emerald-800 text-white">
+                            <tr>
+                               <th className="px-4 py-3 text-center w-24 border-r border-emerald-700">Jam</th>
+                               <th className="px-4 py-3 text-center w-32 border-r border-emerald-700">Waktu</th>
+                               <th className="px-4 py-3 text-left">Aktivitas / Kelas Mengajar</th>
+                            </tr>
+                         </thead>
                          <tbody className="bg-white divide-y divide-gray-200">
                             {(() => {
-                               const myRows: React.ReactElement[] = []; const myCodes = teacherData.filter(t => String(t.id) === selectedTeacherId).map(t => t.code);
-                               SCHEDULE_DATA.forEach(day => { day.rows.forEach(row => { if(row.activity) return; CLASSES.forEach(cls => { const key = `${day.day}-${row.jam}-${cls}`; const code = scheduleMap[key]; if (code && myCodes.includes(code)) { const info = codeToDataMap[code]; myRows.push(<tr key={key} className="hover:bg-gray-50"><td className="px-4 py-3 font-bold text-gray-700">{day.day}</td><td className="px-4 py-3 text-center font-bold text-gray-600">{row.jam}</td><td className="px-4 py-3 text-center font-mono text-xs text-gray-500">{row.waktu}</td><td className="px-4 py-3 text-center font-bold text-indigo-600 bg-indigo-50 rounded-lg">{cls}</td><td className="px-4 py-3 text-gray-800">{info?.subject}</td></tr>); } }); }); });
-                               return myRows.length > 0 ? myRows : (<tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">Tidak ada jadwal mengajar.</td></tr>);
+                               // Get selected teacher name to find ALL codes associated with this name (handling multi-subject/multi-ID)
+                               const selectedTeacher = teacherData.find(t => String(t.id) === selectedTeacherId);
+                               const selectedName = selectedTeacher?.name;
+                               const myCodes = teacherData.filter(t => t.name === selectedName).map(t => t.code);
+
+                               return SCHEDULE_DATA.flatMap(day => [
+                                  // Day Header
+                                  <tr key={`day-${day.day}`} className="bg-gray-100">
+                                    <td colSpan={3} className="font-bold text-gray-700 px-4 py-2 border-y border-gray-200">{day.day}</td>
+                                  </tr>,
+                                  // Rows
+                                  ...day.rows.map(row => {
+                                     // 1. Activity Check
+                                     if (row.activity) {
+                                        return (
+                                           <tr key={`${day.day}-${row.jam}-activity`} className="bg-orange-50">
+                                              <td className="px-4 py-3 text-center font-bold text-gray-500 text-xs border-r border-orange-100">{row.jam}</td>
+                                              <td className="px-4 py-3 text-center font-mono text-xs text-gray-500 border-r border-orange-100">{row.waktu}</td>
+                                              <td className="px-4 py-3 text-center font-bold text-orange-800 text-xs uppercase tracking-wide">{row.activity}</td>
+                                           </tr>
+                                        );
+                                     }
+                       
+                                     // 2. Find Classes
+                                     const teachingDetails: string[] = [];
+                                     CLASSES.forEach(cls => {
+                                        const key = `${day.day}-${row.jam}-${cls}`;
+                                        const code = scheduleMap[key];
+                                        if (code && myCodes.includes(code)) {
+                                           const info = codeToDataMap[code];
+                                           teachingDetails.push(`${cls} (${info?.subject})`);
+                                        }
+                                     });
+                       
+                                     const isTeaching = teachingDetails.length > 0;
+                       
+                                     return (
+                                        <tr key={`${day.day}-${row.jam}`} className={isTeaching ? "bg-emerald-50 hover:bg-emerald-100 transition-colors" : "hover:bg-gray-50"}>
+                                           <td className={`px-4 py-3 text-center font-bold ${isTeaching ? 'text-emerald-700' : 'text-gray-400'} border-r border-gray-100`}>{row.jam}</td>
+                                           <td className="px-4 py-3 text-center font-mono text-xs text-gray-500 border-r border-gray-100">{row.waktu}</td>
+                                           <td className="px-4 py-3">
+                                              {isTeaching ? (
+                                                 <span className="font-bold text-emerald-700 flex flex-wrap gap-2">
+                                                    {teachingDetails.map((detail, i) => (
+                                                       <span key={i} className="bg-white border border-emerald-200 px-2 py-1 rounded shadow-sm text-xs">
+                                                          {detail}
+                                                       </span>
+                                                    ))}
+                                                 </span>
+                                              ) : (
+                                                 <span className="text-gray-300 text-xs italic">-</span>
+                                              )}
+                                           </td>
+                                        </tr>
+                                     )
+                                  })
+                               ]);
                             })()}
                          </tbody>
                       </table>
